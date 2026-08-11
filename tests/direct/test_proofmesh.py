@@ -887,17 +887,28 @@ class TestCredentialIssuance:
         assert status["credential_count"] == 0
 
     def test_credential_has_no_manual_grant_path(self):
-        """Structural guarantee: the only way self.credentials is ever
-        written is inside evaluate_identity, after a finalized eligible
-        verdict. There is no admin/grant method in the contract."""
+        """Structural guarantee: self.credentials is only ever written from
+        inside evaluate_identity (issuance, after a finalized eligible
+        verdict) and evaluate_continuity (status transitions on an existing
+        credential). There is no admin/grant method in the contract, and no
+        write site outside those two methods."""
         source = CONTRACT_SOURCE
         assert "def grant_credential" not in source
         assert "def admin_" not in source
         assert "def issue_credential(" not in source
-        write_sites = [
-            line for line in source.splitlines() if "self.credentials[" in line and "=" in line
-        ]
-        assert len(write_sites) == 1
+
+        allowed_methods = {
+            "evaluate_identity", "evaluate_continuity", "request_continuity_check",
+        }
+        current_method = None
+        for line in source.splitlines():
+            if line.startswith("    def "):  # top-level class method only
+                current_method = line.strip()[4:].split("(", 1)[0]
+            if "self.credentials[" in line and "=" in line and "==" not in line:
+                assert current_method in allowed_methods, (
+                    f"Unexpected self.credentials[...] write outside "
+                    f"{allowed_methods}: found in '{current_method}'"
+                )
 
     def test_credential_historical_record_preserved_after_second_profile(
         self, direct_deploy, direct_vm, direct_alice
@@ -937,8 +948,341 @@ class TestCredentialIssuance:
         assert status["credential_count"] == 2
 
 
+CONTINUITY_CONFIRMED_VERDICT = {
+    "still_valid": True,
+    "continuity_risk_bps": 300,
+    "ownership_change_suspected": False,
+    "recheck_due": False,
+    "reason_codes": ["CONTINUITY_CONFIRMED"],
+    "evidence_refs": ["proof-1"],
+    "summary": "The GitHub profile still shows the same content and remains reachable.",
+}
+
+CONTINUITY_STALE_VERDICT = {
+    "still_valid": False,
+    "continuity_risk_bps": 4000,
+    "ownership_change_suspected": False,
+    "recheck_due": False,
+    "reason_codes": ["INSUFFICIENT_EVIDENCE"],
+    "evidence_refs": [],
+    "summary": "Live evidence no longer clearly supports the original claim.",
+}
+
+CONTINUITY_OWNERSHIP_CHANGE_VERDICT = {
+    "still_valid": False,
+    "continuity_risk_bps": 9000,
+    "ownership_change_suspected": True,
+    "recheck_due": False,
+    "reason_codes": ["ACCOUNT_TRANSFER_SUSPECTED"],
+    "evidence_refs": [],
+    "summary": "The profile now displays a different owner's identity information.",
+}
+
+CONTINUITY_INACCESSIBLE_VERDICT = {
+    "still_valid": False,
+    "continuity_risk_bps": 2000,
+    "ownership_change_suspected": False,
+    "recheck_due": False,
+    "reason_codes": ["SOURCE_INACCESSIBLE"],
+    "evidence_refs": [],
+    "summary": "The claimed source could not be reached during this check.",
+}
+
+CONTINUITY_RECHECK_DUE_VERDICT = {
+    "still_valid": True,
+    "continuity_risk_bps": 6000,
+    "ownership_change_suspected": False,
+    "recheck_due": True,
+    "reason_codes": ["CONTINUITY_CONFIRMED"],
+    "evidence_refs": ["proof-1"],
+    "summary": "Still valid, but risk has increased enough to warrant an earlier recheck.",
+}
+
+
+def _credentialed_profile(direct_deploy, direct_vm, direct_alice):
+    """Profile with one ACTIVE credential, ready for a continuity cycle."""
+    contract = _ready_for_evaluation(direct_deploy, direct_vm, direct_alice)
+    direct_vm.mock_llm(r".*", _fenced(POSITIVE_VERDICT))
+    contract.evaluate_identity("profile-1", "policy-1")
+    credential_id = json.loads(contract.get_profile_credential_ids("profile-1"))[0]
+    direct_vm.clear_mocks()
+    return contract, credential_id
+
+
 class TestContinuity:
-    pass
+    def test_valid_continuity_confirmation(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")  # 30+ days after issuance
+
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        profile = json.loads(contract.get_identity_profile("profile-1"))
+        assert profile["continuity_status"] == "CHECK_PENDING"
+
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_CONFIRMED_VERDICT))
+
+        result = json.loads(contract.evaluate_continuity(continuity_id))
+        assert result["status"] == "ACTIVE"
+        assert result["continuity_risk_bps"] == 300
+        assert result["reason_codes"] == ["CONTINUITY_CONFIRMED"]
+        assert result["evaluated_at"]
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "ACTIVE"
+        assert credential["last_continuity_check"] == result["evaluated_at"]
+
+        profile = json.loads(contract.get_identity_profile("profile-1"))
+        assert profile["continuity_status"] == "ACTIVE"
+
+    def test_recheck_due_transition(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_RECHECK_DUE_VERDICT))
+
+        result = json.loads(contract.evaluate_continuity(continuity_id))
+        assert result["status"] == "RECHECK_DUE"
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "RECHECK_DUE"
+
+    def test_stale_credential(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Ambiguous content."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_STALE_VERDICT))
+
+        result = json.loads(contract.evaluate_continuity(continuity_id))
+        assert result["status"] == "STALE"
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "STALE"
+
+    def test_ownership_change_suspected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web(
+            "github.com/alexdev", {"status": 200, "body": "Now owned by someone else."}
+        )
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_OWNERSHIP_CHANGE_VERDICT))
+
+        result = json.loads(contract.evaluate_continuity(continuity_id))
+        assert result["status"] == "CHALLENGED"
+        assert result["reason_codes"] == ["ACCOUNT_TRANSFER_SUSPECTED"]
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "CHALLENGED"
+
+    def test_inaccessible_source_handled_gracefully(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        # No mock_web registered: gl.nondet.web.render raises, leader must
+        # classify the source as inaccessible instead of crashing.
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_INACCESSIBLE_VERDICT))
+
+        result = json.loads(contract.evaluate_continuity(continuity_id))
+        assert result["status"] == "STALE"
+        assert result["reason_codes"] == ["SOURCE_INACCESSIBLE"]
+
+    def test_malformed_verdict_reverts_safely(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        direct_vm.mock_llm(r".*", "not json at all")
+
+        with direct_vm.expect_revert("Malformed continuity output: response is not valid JSON"):
+            contract.evaluate_continuity(continuity_id)
+
+        # Credential and continuity record must be untouched by a reverted call.
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "ACTIVE"
+        record = json.loads(contract.get_continuity_record(continuity_id))
+        assert record["status"] == "PENDING"
+
+    def test_unknown_reason_code_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        bad = dict(CONTINUITY_STALE_VERDICT, reason_codes=["NOT_A_REAL_CODE"])
+        direct_vm.mock_llm(r".*", _fenced(bad))
+
+        with direct_vm.expect_revert("Unknown reason code: NOT_A_REAL_CODE"):
+            contract.evaluate_continuity(continuity_id)
+
+    def test_nonexistent_evidence_ref_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        bad = dict(CONTINUITY_CONFIRMED_VERDICT, evidence_refs=["proof-does-not-exist"])
+        direct_vm.mock_llm(r".*", _fenced(bad))
+
+        with direct_vm.expect_revert(
+            "evidence_refs references a proof outside the credential's baseline evidence set"
+        ):
+            contract.evaluate_continuity(continuity_id)
+
+    def test_bps_out_of_range_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        bad = dict(CONTINUITY_CONFIRMED_VERDICT, continuity_risk_bps=-5)
+        direct_vm.mock_llm(r".*", _fenced(bad))
+
+        with direct_vm.expect_revert("continuity_risk_bps must be between 0 and 10000"):
+            contract.evaluate_continuity(continuity_id)
+
+    def test_wrong_field_type_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        bad = dict(CONTINUITY_CONFIRMED_VERDICT, ownership_change_suspected="no")
+        direct_vm.mock_llm(r".*", _fenced(bad))
+
+        with direct_vm.expect_revert("ownership_change_suspected must be a boolean"):
+            contract.evaluate_continuity(continuity_id)
+
+    def test_missing_field_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        bad = dict(CONTINUITY_CONFIRMED_VERDICT)
+        del bad["recheck_due"]
+        direct_vm.mock_llm(r".*", _fenced(bad))
+
+        with direct_vm.expect_revert("missing field 'recheck_due'"):
+            contract.evaluate_continuity(continuity_id)
+
+    def test_credential_status_update_persisted(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Now owned by someone else."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_OWNERSHIP_CHANGE_VERDICT))
+        contract.evaluate_continuity(continuity_id)
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "CHALLENGED"
+        assert credential["last_continuity_check"]
+
+    def test_only_eligible_credentials_can_be_continuity_checked(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        # Not yet due: issuance was seconds ago, well inside the 30-day window.
+        with direct_vm.expect_revert("Continuity recheck is not yet due for this credential"):
+            contract.request_continuity_check("profile-1", credential_id)
+
+        # Once CHALLENGED (via a completed continuity cycle), a further
+        # request on the same now-ineligible credential must be rejected.
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_OWNERSHIP_CHANGE_VERDICT))
+        contract.evaluate_continuity(continuity_id)
+
+        direct_vm.clear_mocks()
+        direct_vm.warp("2030-03-15T03:00:00Z")
+        with direct_vm.expect_revert(
+            "Credential is not eligible for a continuity check in its current status"
+        ):
+            contract.request_continuity_check("profile-1", credential_id)
+
+    def test_expired_credential_cannot_be_continuity_checked(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-04-15T00:00:00Z")  # past the 90-day credential validity
+
+        with direct_vm.expect_revert(
+            "EXPIRED: credential has passed its expiry and cannot be continuity-checked"
+        ):
+            contract.request_continuity_check("profile-1", credential_id)
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "EXPIRED"
+
+    def test_repeated_continuity_checks_preserve_history(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id_1 = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_RECHECK_DUE_VERDICT))
+        contract.evaluate_continuity(continuity_id_1)
+        direct_vm.clear_mocks()
+
+        direct_vm.warp("2030-03-02T03:00:00Z")  # RECHECK_DUE bypasses the interval gate
+        continuity_id_2 = contract.request_continuity_check("profile-1", credential_id)
+        assert continuity_id_2 != continuity_id_1
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_CONFIRMED_VERDICT))
+        contract.evaluate_continuity(continuity_id_2)
+
+        history_ids = json.loads(contract.get_credential_continuity_ids(credential_id))
+        assert history_ids == [continuity_id_1, continuity_id_2]
+
+        first_record = json.loads(contract.get_continuity_record(continuity_id_1))
+        assert first_record["status"] == "RECHECK_DUE"
+        second_record = json.loads(contract.get_continuity_record(continuity_id_2))
+        assert second_record["status"] == "ACTIVE"
+
+        # Final credential state reflects the most recent check, but the
+        # first record is preserved unchanged in history.
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "ACTIVE"
+        assert json.loads(contract.get_continuity_record(continuity_id_1))["status"] == "RECHECK_DUE"
+
+    def test_double_evaluation_of_same_request_rejected(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_CONFIRMED_VERDICT))
+        contract.evaluate_continuity(continuity_id)
+
+        with direct_vm.expect_revert("Continuity record has already been evaluated"):
+            contract.evaluate_continuity(continuity_id)
+
+    def test_continuity_check_requires_credential_belongs_to_profile(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        contract.create_identity_profile("profile-2")
+
+        with direct_vm.expect_revert("Credential does not belong to this profile"):
+            contract.request_continuity_check("profile-2", credential_id)
+
+    def test_continuity_check_is_permissionless(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        direct_vm.sender = direct_bob  # not the profile owner
+
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        assert continuity_id
+
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_CONFIRMED_VERDICT))
+        result = json.loads(contract.evaluate_continuity(continuity_id))
+        assert result["status"] == "ACTIVE"
 
 
 class TestConflicts:
