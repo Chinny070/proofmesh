@@ -888,23 +888,30 @@ class TestCredentialIssuance:
 
     def test_credential_has_no_manual_grant_path(self):
         """Structural guarantee: self.credentials is only ever written from
-        inside evaluate_identity (issuance, after a finalized eligible
-        verdict) and evaluate_continuity (status transitions on an existing
-        credential). There is no admin/grant method in the contract, and no
-        write site outside those two methods."""
+        methods that run after a finalized nondet-adjudicated verdict (or a
+        deterministic time-based expiry side effect). There is no admin/grant
+        method anywhere, and TRANSFER never lets a caller directly assign
+        ownership -- it only happens inside evaluate_identity_challenge,
+        gated by the same verdict validation as every other outcome."""
         source = CONTRACT_SOURCE
         assert "def grant_credential" not in source
         assert "def admin_" not in source
         assert "def issue_credential(" not in source
+        assert "def assign_" not in source
+        assert "def set_credential" not in source
 
         allowed_methods = {
-            "evaluate_identity", "evaluate_continuity", "request_continuity_check",
+            "evaluate_identity",
+            "evaluate_continuity",
+            "request_continuity_check",
+            "open_identity_challenge",
+            "evaluate_identity_challenge",
         }
         current_method = None
         for line in source.splitlines():
             if line.startswith("    def "):  # top-level class method only
                 current_method = line.strip()[4:].split("(", 1)[0]
-            if "self.credentials[" in line and "=" in line and "==" not in line:
+            if line.strip().startswith("self.credentials[") and "=" in line and "==" not in line:
                 assert current_method in allowed_methods, (
                     f"Unexpected self.credentials[...] write outside "
                     f"{allowed_methods}: found in '{current_method}'"
@@ -1285,8 +1292,480 @@ class TestContinuity:
         assert result["status"] == "ACTIVE"
 
 
+UPHOLD_VERDICT = {
+    "decision": "UPHOLD",
+    "current_controller_profile_id": "profile-1",
+    "historical_controller_profile_id": "profile-1",
+    "credential_action": "KEEP_ACTIVE",
+    "confidence_bps": 8500,
+    "reason_codes": ["PROFILE_COHERENCE_CONFIRMED"],
+    "evidence_refs": ["proof-1"],
+    "summary": "The historical controller still controls the source; the competing "
+    "claim lacks independent support.",
+}
+
+TRANSFER_VERDICT = {
+    "decision": "TRANSFER",
+    "current_controller_profile_id": "profile-2",
+    "historical_controller_profile_id": "profile-1",
+    "credential_action": "TRANSFER_CREDENTIAL",
+    "confidence_bps": 9000,
+    "reason_codes": ["ACCOUNT_TRANSFER_SUSPECTED"],
+    "evidence_refs": ["proof-2"],
+    "summary": "Live evidence shows the competing profile now controls the source.",
+}
+
+REVOKE_VERDICT = {
+    "decision": "REVOKE",
+    "current_controller_profile_id": "",
+    "historical_controller_profile_id": "profile-1",
+    "credential_action": "REVOKE_CREDENTIAL",
+    "confidence_bps": 9500,
+    "reason_codes": ["MANIPULATION_RISK_HIGH"],
+    "evidence_refs": [],
+    "summary": "Evidence indicates fabrication; the credential cannot remain active "
+    "for anyone.",
+}
+
+REQUIRE_REVERIFICATION_VERDICT = {
+    "decision": "REQUIRE_REVERIFICATION",
+    "current_controller_profile_id": "",
+    "historical_controller_profile_id": "profile-1",
+    "credential_action": "REQUIRE_REVERIFICATION",
+    "confidence_bps": 3000,
+    "reason_codes": ["ACCOUNT_OWNERSHIP_UNCLEAR"],
+    "evidence_refs": [],
+    "summary": "Evidence is ambiguous; the historical controller should redo verification.",
+}
+
+
+def _open_dispute_ready(direct_deploy, direct_vm, direct_alice, direct_bob):
+    """Alice's profile-1 holds an ACTIVE credential over github.com/alexdev.
+    Bob's profile-2 independently claims and proves the same source -- a
+    genuine competing-profile claim ready to be disputed."""
+    contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+    direct_vm.sender = direct_bob
+    contract.create_identity_profile("profile-2")
+    contract.add_identity_claim(
+        "profile-2", "claim-2", "GITHUB_PROFILE", "https://github.com/alexdev"
+    )
+    contract.issue_verification_challenge("profile-2", "claim-2")
+    direct_vm.warp("2030-01-01T03:00:00Z")
+    contract.submit_identity_proof(
+        "profile-2", "claim-2", "proof-2", "https://github.com/alexdev",
+        "PAGE_TEXT", hashlib.sha256(b"competing-evidence").hexdigest(), "2030-01-01T02:30:00",
+    )
+    direct_vm.sender = direct_alice
+    return contract, credential_id
+
+
 class TestConflicts:
-    pass
+    def test_valid_challenge_opening(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "", "PROOF_STALE", "The linked evidence is no longer current."
+        )
+        assert challenge_id
+
+        challenge = json.loads(contract.get_identity_challenge(challenge_id))
+        assert challenge["credential_id"] == credential_id
+        assert challenge["reason_code"] == "PROOF_STALE"
+        assert challenge["status"] == "OPEN"
+        assert challenge["evidence_refs"] == []
+        assert challenge["challenger"].lower() == as_hex(direct_alice).lower()
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "CHALLENGED"
+        assert credential["unresolved_challenges"] == 1
+
+        profile = json.loads(contract.get_identity_profile("profile-1"))
+        assert profile["active_challenge_id"] == challenge_id
+
+        history_ids = json.loads(contract.get_credential_challenge_ids(credential_id))
+        assert history_ids == [challenge_id]
+
+        status = json.loads(contract.get_protocol_status())
+        assert status["identity_challenge_count"] == 1
+
+    def test_unsupported_challenge_reason_rejected(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        with direct_vm.expect_revert("Challenge reason must be one of"):
+            contract.open_identity_challenge(
+                credential_id, "", "NOT_A_REAL_REASON", "some statement"
+            )
+
+    def test_duplicate_active_challenge_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        contract.open_identity_challenge(credential_id, "", "PROOF_STALE", "First challenge.")
+
+        with direct_vm.expect_revert(
+            "This credential already has an unresolved identity challenge"
+        ):
+            contract.open_identity_challenge(
+                credential_id, "", "PROOF_STALE", "Second challenge, should be rejected."
+            )
+
+    def test_competing_profile_claim_opens(self, direct_deploy, direct_vm, direct_alice, direct_bob):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+
+        challenge_id = contract.open_identity_challenge(
+            credential_id,
+            "profile-2",
+            "CONFLICTING_WALLET_CLAIM",
+            "Profile-2 also proved control of the same GitHub profile.",
+        )
+        challenge = json.loads(contract.get_identity_challenge(challenge_id))
+        assert challenge["competing_profile_id"] == "profile-2"
+        assert challenge["reason_code"] == "CONFLICTING_WALLET_CLAIM"
+
+    def test_conflicting_wallet_claim_requires_competing_profile(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        with direct_vm.expect_revert("CONFLICTING_WALLET_CLAIM requires a competing_profile_id"):
+            contract.open_identity_challenge(
+                credential_id, "", "CONFLICTING_WALLET_CLAIM", "No competing profile given."
+            )
+
+    def test_competing_profile_must_exist(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        with direct_vm.expect_revert("Competing profile not found"):
+            contract.open_identity_challenge(
+                credential_id, "no-such-profile", "CONFLICTING_WALLET_CLAIM", "statement"
+            )
+
+    def _resolve(self, contract, direct_vm, challenge_id, verdict, mock_body="live page content"):
+        contract.freeze_identity_challenge(challenge_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": mock_body})
+        direct_vm.mock_llm(r".*", _fenced(verdict))
+        result = json.loads(contract.evaluate_identity_challenge(challenge_id))
+        direct_vm.clear_mocks()
+        return result
+
+    def test_uphold_decision(self, direct_deploy, direct_vm, direct_alice, direct_bob):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.submit_challenge_evidence(challenge_id, "proof-2")
+
+        result = self._resolve(contract, direct_vm, challenge_id, UPHOLD_VERDICT)
+        assert result["status"] == "RESOLVED"
+        assert result["resolution"] == "UPHOLD"
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "ACTIVE"
+        assert credential["unresolved_challenges"] == 0
+
+        profile = json.loads(contract.get_identity_profile("profile-1"))
+        assert profile["active_challenge_id"] == ""
+
+    def test_transfer_decision(self, direct_deploy, direct_vm, direct_alice, direct_bob):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.submit_challenge_evidence(challenge_id, "proof-2")
+
+        result = self._resolve(contract, direct_vm, challenge_id, TRANSFER_VERDICT)
+        assert result["resolution"] == "TRANSFER"
+
+        old_credential = json.loads(contract.get_credential(credential_id))
+        assert old_credential["status"] == "TRANSFERRED"
+
+        new_credential_ids = json.loads(contract.get_profile_credential_ids("profile-2"))
+        assert len(new_credential_ids) == 1
+        new_credential_id = new_credential_ids[0]
+        assert new_credential_id != credential_id
+
+        new_credential = json.loads(contract.get_credential(new_credential_id))
+        assert new_credential["profile_id"] == "profile-2"
+        assert new_credential["status"] == "ACTIVE"
+        assert new_credential["credential_type"] == old_credential["credential_type"]
+        assert new_credential["evidence_refs"] == ["proof-2"]
+
+    def test_revoke_decision(self, direct_deploy, direct_vm, direct_alice, direct_bob):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CLAIM_FABRICATED", "Evidence looks fabricated."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+
+        result = self._resolve(contract, direct_vm, challenge_id, REVOKE_VERDICT)
+        assert result["resolution"] == "REVOKE"
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "REVOKED"
+
+    def test_require_reverification_decision(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Ambiguous dispute."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+
+        result = self._resolve(contract, direct_vm, challenge_id, REQUIRE_REVERIFICATION_VERDICT)
+        assert result["resolution"] == "REQUIRE_REVERIFICATION"
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "RECHECK_DUE"
+
+    def test_invalid_controller_profile_id_rejected(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        bad = dict(UPHOLD_VERDICT, current_controller_profile_id="some-other-profile")
+
+        with direct_vm.expect_revert(
+            "UPHOLD requires current_controller_profile_id to equal the historical controller"
+        ):
+            self._resolve(contract, direct_vm, challenge_id, bad)
+
+    def test_historical_controller_mismatch_rejected(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        bad = dict(UPHOLD_VERDICT, historical_controller_profile_id="profile-2")
+
+        with direct_vm.expect_revert(
+            "historical_controller_profile_id must match the credential's actual profile_id"
+        ):
+            self._resolve(contract, direct_vm, challenge_id, bad)
+
+    def test_nonexistent_evidence_ref_rejected(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        bad = dict(UPHOLD_VERDICT, evidence_refs=["proof-does-not-exist"])
+
+        with direct_vm.expect_revert(
+            "evidence_refs references evidence outside this challenge's submitted evidence"
+        ):
+            self._resolve(contract, direct_vm, challenge_id, bad)
+
+    def test_malformed_adjudication_output_rejected(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.freeze_identity_challenge(challenge_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        direct_vm.mock_llm(r".*", "not json at all")
+
+        with direct_vm.expect_revert("Malformed challenge output: response is not valid JSON"):
+            contract.evaluate_identity_challenge(challenge_id)
+
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == "CHALLENGED"
+        challenge = json.loads(contract.get_identity_challenge(challenge_id))
+        assert challenge["status"] == "FROZEN"
+
+    def test_bps_out_of_range_rejected(self, direct_deploy, direct_vm, direct_alice, direct_bob):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        bad = dict(UPHOLD_VERDICT, confidence_bps=15000)
+
+        with direct_vm.expect_revert("confidence_bps must be between 0 and 10000"):
+            self._resolve(contract, direct_vm, challenge_id, bad)
+
+    def test_history_preservation_after_transfer(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.submit_challenge_evidence(challenge_id, "proof-2")
+        original_credential_before = json.loads(contract.get_credential(credential_id))
+
+        self._resolve(contract, direct_vm, challenge_id, TRANSFER_VERDICT)
+
+        old_credential = json.loads(contract.get_credential(credential_id))
+        # every original field is preserved unchanged except status and the
+        # unresolved_challenges counter (which correctly decrements once
+        # this dispute resolves)
+        unaffected_keys = {"status", "unresolved_challenges"}
+        for key in original_credential_before:
+            if key in unaffected_keys:
+                continue
+            assert old_credential[key] == original_credential_before[key], key
+        assert old_credential["status"] == "TRANSFERRED"
+        assert old_credential["unresolved_challenges"] == 0
+
+        # still linked from profile-1's history, not removed
+        assert credential_id in json.loads(contract.get_profile_credential_ids("profile-1"))
+
+    def test_old_controller_remains_historically_queryable(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.submit_challenge_evidence(challenge_id, "proof-2")
+        self._resolve(contract, direct_vm, challenge_id, TRANSFER_VERDICT)
+
+        # profile-1 itself is still fully queryable and untouched as an entity
+        profile = json.loads(contract.get_identity_profile("profile-1"))
+        assert profile["id"] == "profile-1"
+        claim = json.loads(contract.get_identity_claim("claim-1"))
+        assert claim["claim_id"] == "claim-1"
+        old_credential = json.loads(contract.get_credential(credential_id))
+        assert old_credential["profile_id"] == "profile-1"
+
+    @pytest.mark.parametrize(
+        "verdict,expected_status",
+        [
+            (UPHOLD_VERDICT, "ACTIVE"),
+            (REVOKE_VERDICT, "REVOKED"),
+            (REQUIRE_REVERIFICATION_VERDICT, "RECHECK_DUE"),
+        ],
+        ids=["upheld", "revoked", "require_reverification"],
+    )
+    def test_credential_state_changes_correctly_per_decision(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob, verdict, expected_status
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        self._resolve(contract, direct_vm, challenge_id, verdict)
+        credential = json.loads(contract.get_credential(credential_id))
+        assert credential["status"] == expected_status, verdict["decision"]
+
+    def test_challenged_credential_cannot_bypass_dispute_resolution(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        contract.open_identity_challenge(credential_id, "", "PROOF_STALE", "Stale evidence.")
+
+        # A CHALLENGED credential must not be continuity-checkable -- that
+        # would let a continuity pass silently clear a live dispute.
+        with direct_vm.expect_revert(
+            "Credential is not eligible for a continuity check in its current status"
+        ):
+            contract.request_continuity_check("profile-1", credential_id)
+
+    def test_unauthorized_evidence_submission_rejected(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        # An unrelated third profile's proof must not be attachable as
+        # evidence to a dispute it has nothing to do with.
+        direct_vm.sender = direct_bob
+        contract.create_identity_profile("profile-3")
+        contract.add_identity_claim(
+            "profile-3", "claim-3", "X_PROFILE", "https://x.com/someoneelse"
+        )
+        contract.issue_verification_challenge("profile-3", "claim-3")
+        direct_vm.warp("2030-01-01T04:00:00Z")
+        contract.submit_identity_proof(
+            "profile-3", "claim-3", "proof-3", "https://x.com/someoneelse",
+            "PAGE_TEXT", hashlib.sha256(b"unrelated-evidence").hexdigest(), "2030-01-01T03:30:00",
+        )
+
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        with direct_vm.expect_revert(
+            "Evidence must belong to the challenged profile or the competing profile"
+        ):
+            contract.submit_challenge_evidence(challenge_id, "proof-3")
+
+    def test_evidence_submission_after_freeze_rejected(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.freeze_identity_challenge(challenge_id)
+
+        with direct_vm.expect_revert("Evidence can only be submitted to an open challenge"):
+            contract.submit_challenge_evidence(challenge_id, "proof-2")
+
+    def test_freeze_without_evidence_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "", "PROOF_STALE", "No evidence submitted yet."
+        )
+
+        with direct_vm.expect_revert("INSUFFICIENT_EVIDENCE"):
+            contract.freeze_identity_challenge(challenge_id)
+
+    def test_evaluate_requires_frozen_challenge(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "", "PROOF_STALE", "Not frozen yet."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+
+        with direct_vm.expect_revert(
+            "Challenge must be frozen (freeze_identity_challenge) before it can be evaluated"
+        ):
+            contract.evaluate_identity_challenge(challenge_id)
 
 
 class TestTrustPolicies:
