@@ -14,6 +14,20 @@ This is not a one-post social verification app — see [docs/credential-schema.m
 - RPC: `https://studio.genlayer.com/api`
 - No backend, no centralized database, no serverless functions.
 
+## Deployed contract
+
+| Setting | Value |
+|---|---|
+| Contract address | `0xfC0504f92783F1418e333AECb6CB587E24979e2a` |
+| Network | GenLayer StudioNet |
+| Chain ID | `61999` |
+| RPC | `https://studio.genlayer.com/api` |
+
+Deployed manually through GenLayer Studio. Post-deployment verification
+(schema inspection + live read-only calls) is complete — see
+[docs/deployment.md](docs/deployment.md) and the live schema at
+[docs/deployed-schema.json](docs/deployed-schema.json).
+
 ## Repository layout
 
 ```text
@@ -27,7 +41,7 @@ proofmesh/
 
 ## Status
 
-**Stage 8 complete: contract audited and completion-gated, ready for manual StudioNet deployment.**
+**Stage 8 complete: contract audited, deployed to StudioNet, and post-deployment verified.**
 
 The contract (`contracts/proofmesh.py`) implements the full protocol through Stage 7:
 
@@ -42,4 +56,4 @@ The contract (`contracts/proofmesh.py`) implements the full protocol through Sta
 
 Direct tests: 127 passed, 0 failed, 0 skipped (`pytest tests/direct/ -v`). `genvm-lint check contracts/proofmesh.py --json` passes clean.
 
-Not yet built: the product frontend (Stages 9–10) and the Integration Hub (Stage 11). See [docs/deployment.md](docs/deployment.md) for manual StudioNet deployment instructions — no contract has been deployed yet, so no address is recorded anywhere in this repo.
+Not yet built: the product frontend (Stages 9–10) and the Integration Hub (Stage 11). See [docs/deployment.md](docs/deployment.md) for the full deployment and post-deployment-verification record.

@@ -1,9 +1,23 @@
 # Deployment
 
-**Status: not yet deployed.** No contract address is recorded anywhere in
-this repository. This document is manual deployment guidance for GenLayer
-Studio, prepared at the end of Stage 8 (contract completion gate). Nothing
-here should be read as "already deployed."
+**Status: deployed to GenLayer StudioNet.** Deployed manually through
+GenLayer Studio (not via CLI).
+
+| Setting | Value |
+|---|---|
+| Contract address | `0xfC0504f92783F1418e333AECb6CB587E24979e2a` |
+| Network | GenLayer StudioNet |
+| Chain ID | `61999` |
+| RPC | `https://studio.genlayer.com/api` |
+
+Post-deployment verification (schema inspection + live read-only calls) is
+complete — see [Post-deployment verification result](#post-deployment-verification-result)
+below. The full deployed schema, as returned live by the contract, is saved
+at [docs/deployed-schema.json](deployed-schema.json).
+
+The rest of this document is the deployment guidance prepared before the
+deployment happened (contract file, constructor requirements, expected
+schema) plus the verification checklist, now marked complete.
 
 ## Exact contract file to deploy
 
@@ -45,40 +59,51 @@ storage `TreeMap` starts empty. Deploy with an empty args list.
 | RPC | `https://studio.genlayer.com/api` |
 | Studio UI | https://studio.genlayer.com |
 
-## Expected deployed method/schema inventory
+## Expected (and confirmed) deployed method/schema inventory
 
 33 public methods: 13 writes, 20 views. Full list in
-[docs/credential-schema.md](credential-schema.md#method-inventory). After
-deployment, use Studio's contract-schema inspector to confirm the deployed
-ABI matches this count and these exact method names/signatures — a mismatch
-would indicate a stale build or a deployment of the wrong file.
+[docs/credential-schema.md](credential-schema.md#method-inventory). Confirmed
+against the live deployed schema — see
+[Post-deployment verification result](#post-deployment-verification-result)
+and [docs/deployed-schema.json](deployed-schema.json).
 
-## Post-deployment verification checklist
+## Post-deployment verification result
 
-1. **Confirm finality**, not just submission — Studio shows transaction
-   status; wait for the deployment transaction to reach a finalized state
-   before treating the contract address as usable. A transaction hash is
-   not success (see the frontend transaction-state-machine design in the
-   build brief, section 22 — the same principle applies to deployment
-   itself).
-2. **Inspect the schema** via Studio's contract viewer. Confirm 13 write
-   methods and 20 view methods, matching
+Performed against the live deployed contract at
+`0xfC0504f92783F1418e333AECb6CB587E24979e2a` on StudioNet, via
+`genlayer_py`'s `get_contract_schema` and `read_contract` (read-only calls
+only — no write, no redeployment).
+
+1. **Schema inspection** — the live schema returned by the contract itself
+   was fetched and saved to
+   [docs/deployed-schema.json](deployed-schema.json). It reports **33
+   methods: 13 write, 20 view**, a zero-parameter constructor
+   (`"ctor": {"params": [], "kwparams": {}}`), and every one of the 18
+   explicitly-required method names present with the expected parameter
+   list (e.g. `create_trust_policy` takes exactly
+   `name, credential_type, minimum_confidence_bps,
+   minimum_independent_signals, require_no_active_challenge,
+   require_current_continuity, allowed_claim_types`). This matches
    [docs/credential-schema.md](credential-schema.md#method-inventory)
-   exactly by name.
-3. **Call every read method in the checklist below** and confirm each
-   returns the expected empty/zero state.
-4. **Confirm error handling on-chain**, not just in `gltest` direct mode:
-   call `get_identity_profile("does-not-exist")` and confirm it reverts
-   with `"Profile not found"` rather than returning a default value.
-5. **Run the first write flow below** end-to-end, including a real
-   `evaluate_identity` call, and confirm it reaches finality with a valid
-   credential (or a clean rejection) — this is the only way to confirm the
-   real GenVM validator network (not the `gltest` direct-mode mock) can
-   actually execute `gl.nondet.web.render` + `gl.nondet.exec_prompt` +
-   `gl.eq_principle.prompt_comparative` against this contract.
-6. **Record the deployed contract address** in `frontend/.env.example`
-   (`VITE_PROOFMESH_CONTRACT_ADDRESS`) only after this checklist passes —
-   not before.
+   exactly by name and count — confirms this is the correct build, not a
+   stale one.
+2. **Live read-only calls** — all four returned the expected fresh-deploy
+   empty state:
+
+   ```text
+   get_protocol_status() -> {"profile_count": 0, "claim_count": 0, "proof_count": 0,
+     "credential_count": 0, "continuity_count": 0, "identity_challenge_count": 0,
+     "trust_policy_count": 0}
+   list_profiles()       -> []
+   list_credentials()    -> []
+   list_trust_policies() -> []
+   ```
+
+3. **Not yet performed**: the `get_identity_profile("does-not-exist")`
+   on-chain-revert check and the full first-write flow (steps 4-5 of the
+   original checklist below) — no write transaction has been sent to this
+   contract yet. That's the next verification step once you're ready to
+   spend a transaction against it.
 
 ## Exact read methods to test on a fresh contract
 
@@ -126,14 +151,24 @@ smoke test.
   [docs/credential-schema.md](credential-schema.md) for the method count it
   reports)
 - `pytest tests/direct/ -v`: 127 passed, 0 failed, 0 skipped
-- `gltest tests/integration/ -v -s`: **blocked**. The one integration test
-  present (`test_placeholder_deploys_to_studionet`) is a Stage 1-era
-  placeholder that intentionally `pytest.skip()`s pending a real deployment.
-  Local Docker Desktop is not running on this machine, so `gltest`'s
-  `localnet` target (`http://127.0.0.1:4000/api`) is unreachable
-  (connection refused). StudioNet's RPC (`https://studio.genlayer.com/api`)
-  *is* reachable, but running `gltest` against it would submit a real
-  on-chain deployment transaction — explicitly out of scope for this stage
-  ("do not deploy through CLI unless I explicitly ask"). Real integration
-  tests against a deployed contract are deferred to whenever manual
-  deployment actually happens.
+- `gltest tests/integration/ -v -s`: **blocked at the time of the Stage 8
+  audit**. The one integration test present
+  (`test_placeholder_deploys_to_studionet`) is a Stage 1-era placeholder
+  that intentionally `pytest.skip()`s. Local Docker Desktop was not running
+  on this machine, so `gltest`'s `localnet` target
+  (`http://127.0.0.1:4000/api`) was unreachable (connection refused).
+  StudioNet's RPC was reachable, but running `gltest` against it would have
+  submitted a real on-chain deployment transaction — explicitly out of
+  scope for Stage 8 ("do not deploy through CLI unless I explicitly ask").
+
+## Post-deployment audit (this section)
+
+Manual deployment through GenLayer Studio has since happened (see the
+[Status](#deployment) banner at the top of this document). Post-deployment
+verification used `genlayer_py`'s `get_contract_schema` / `read_contract`
+directly (read-only, no `gltest`, no redeployment) — see
+[Post-deployment verification result](#post-deployment-verification-result)
+above for the schema-inspection and live-read results. The Stage
+1-era `test_placeholder_deploys_to_studionet` integration test itself has
+not been rewritten yet; that remains for whenever a full write-flow
+integration test against the live contract is built.

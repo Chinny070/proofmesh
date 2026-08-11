@@ -1,0 +1,471 @@
+{
+  "chain_id": 61999,
+  "contract_address": "0xfC0504f92783F1418e333AECb6CB587E24979e2a",
+  "network": "GenLayer StudioNet",
+  "retrieved_via": "genlayer_py.get_contract_schema (client.get_contract_schema)",
+  "rpc": "https://studio.genlayer.com/api",
+  "schema": {
+    "ctor": {
+      "kwparams": {},
+      "params": []
+    },
+    "methods": {
+      "add_identity_claim": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ],
+          [
+            "claim_id",
+            "string"
+          ],
+          [
+            "claim_type",
+            "string"
+          ],
+          [
+            "claim_value",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "create_identity_profile": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "create_trust_policy": {
+        "kwparams": {},
+        "params": [
+          [
+            "name",
+            "string"
+          ],
+          [
+            "credential_type",
+            "string"
+          ],
+          [
+            "minimum_confidence_bps",
+            "int"
+          ],
+          [
+            "minimum_independent_signals",
+            "int"
+          ],
+          [
+            "require_no_active_challenge",
+            "bool"
+          ],
+          [
+            "require_current_continuity",
+            "bool"
+          ],
+          [
+            "allowed_claim_types",
+            [
+              {
+                "$rep": "string"
+              }
+            ]
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "evaluate_continuity": {
+        "kwparams": {},
+        "params": [
+          [
+            "continuity_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "evaluate_identity": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ],
+          [
+            "policy_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "evaluate_identity_challenge": {
+        "kwparams": {},
+        "params": [
+          [
+            "challenge_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "evaluate_policy_view": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ],
+          [
+            "policy_id",
+            "string"
+          ],
+          [
+            "credential_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "freeze_identity_challenge": {
+        "kwparams": {},
+        "params": [
+          [
+            "challenge_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "freeze_identity_evaluation": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "get_claim_proof_ids": {
+        "kwparams": {},
+        "params": [
+          [
+            "claim_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_continuity_record": {
+        "kwparams": {},
+        "params": [
+          [
+            "continuity_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_continuity_status": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_credential": {
+        "kwparams": {},
+        "params": [
+          [
+            "credential_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_credential_challenge_ids": {
+        "kwparams": {},
+        "params": [
+          [
+            "credential_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_credential_continuity_ids": {
+        "kwparams": {},
+        "params": [
+          [
+            "credential_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_identity_challenge": {
+        "kwparams": {},
+        "params": [
+          [
+            "challenge_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_identity_claim": {
+        "kwparams": {},
+        "params": [
+          [
+            "claim_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_identity_profile": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_identity_proof": {
+        "kwparams": {},
+        "params": [
+          [
+            "proof_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_identity_status": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_profile_claim_ids": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_profile_credential_ids": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_protocol_status": {
+        "kwparams": {},
+        "params": [],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_trust_policy": {
+        "kwparams": {},
+        "params": [
+          [
+            "policy_id",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "get_trust_policy_versions": {
+        "kwparams": {},
+        "params": [
+          [
+            "name",
+            "string"
+          ]
+        ],
+        "readonly": true,
+        "ret": "string"
+      },
+      "issue_verification_challenge": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ],
+          [
+            "claim_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "list_credentials": {
+        "kwparams": {},
+        "params": [],
+        "readonly": true,
+        "ret": "string"
+      },
+      "list_profiles": {
+        "kwparams": {},
+        "params": [],
+        "readonly": true,
+        "ret": "string"
+      },
+      "list_trust_policies": {
+        "kwparams": {},
+        "params": [],
+        "readonly": true,
+        "ret": "string"
+      },
+      "open_identity_challenge": {
+        "kwparams": {},
+        "params": [
+          [
+            "credential_id",
+            "string"
+          ],
+          [
+            "competing_profile_id",
+            "string"
+          ],
+          [
+            "reason_code",
+            "string"
+          ],
+          [
+            "statement",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "request_continuity_check": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ],
+          [
+            "credential_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "submit_challenge_evidence": {
+        "kwparams": {},
+        "params": [
+          [
+            "challenge_id",
+            "string"
+          ],
+          [
+            "proof_id",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      },
+      "submit_identity_proof": {
+        "kwparams": {},
+        "params": [
+          [
+            "profile_id",
+            "string"
+          ],
+          [
+            "claim_id",
+            "string"
+          ],
+          [
+            "proof_id",
+            "string"
+          ],
+          [
+            "source_url",
+            "string"
+          ],
+          [
+            "proof_type",
+            "string"
+          ],
+          [
+            "content_hash",
+            "string"
+          ],
+          [
+            "observed_at",
+            "string"
+          ]
+        ],
+        "payable": false,
+        "readonly": false,
+        "ret": "string"
+      }
+    }
+  }
+}
