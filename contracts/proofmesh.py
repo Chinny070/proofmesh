@@ -468,6 +468,66 @@ def _validate_challenge_verdict(
     }
 
 
+# -- Stage 7: reusable trust policies --
+
+POLICY_NAME_MAX_LEN = 100
+MAX_MINIMUM_INDEPENDENT_SIGNALS = 20
+
+# Credential statuses eligible to satisfy any trust policy at all, before
+# per-policy requirements (confidence, signals, continuity, challenge,
+# claim types) are checked. STALE, CHALLENGED, REVOKED, EXPIRED, and
+# TRANSFERRED credentials never satisfy a policy -- reusing the same
+# baseline set Stage 5 uses for "still meaningfully alive."
+_POLICY_ELIGIBLE_CREDENTIAL_STATUSES = CONTINUITY_CHECKABLE_CREDENTIAL_STATUSES
+
+
+def _evaluate_policy_deterministic(
+    policy: dict,
+    credential: dict,
+    profile_id: str,
+    evidence_claim_types: set,
+) -> tuple:
+    """Pure, deterministic policy-vs-credential comparison. No LLM call --
+    every field here is already finalized on-chain state (Stage 4-6 output),
+    so this is ordinary numeric/set comparison, never subjective judgment."""
+    failure_reasons = []
+
+    if policy["status"] != "ACTIVE":
+        failure_reasons.append("POLICY_INACTIVE")
+
+    if credential["profile_id"] != profile_id:
+        failure_reasons.append("CREDENTIAL_PROFILE_MISMATCH")
+
+    status = credential["status"]
+    if status not in _POLICY_ELIGIBLE_CREDENTIAL_STATUSES:
+        failure_reasons.append(f"CREDENTIAL_STATUS_NOT_ELIGIBLE:{status}")
+
+    continuity_current = status == "ACTIVE"
+    if policy["require_current_continuity"] and not continuity_current:
+        failure_reasons.append("CONTINUITY_NOT_CURRENT")
+
+    active_challenge = int(credential["unresolved_challenges"]) > 0
+    if policy["require_no_active_challenge"] and active_challenge:
+        failure_reasons.append("ACTIVE_CHALLENGE_PRESENT")
+
+    if credential["credential_type"] != policy["credential_type"]:
+        failure_reasons.append("CREDENTIAL_TYPE_MISMATCH")
+
+    if int(credential["confidence_bps"]) < int(policy["minimum_confidence_bps"]):
+        failure_reasons.append("CONFIDENCE_BELOW_MINIMUM")
+
+    if int(credential["independent_signal_count"]) < int(
+        policy["minimum_independent_signals"]
+    ):
+        failure_reasons.append("INSUFFICIENT_INDEPENDENT_SIGNALS")
+
+    allowed_claim_types = set(policy["allowed_claim_types"])
+    if evidence_claim_types and not evidence_claim_types.issubset(allowed_claim_types):
+        failure_reasons.append("CLAIM_TYPE_NOT_ALLOWED")
+
+    return (not failure_reasons, failure_reasons, continuity_current, active_challenge)
+
+
 def _normalize_claim_value(claim_value: str) -> str:
     """Deterministic URL/handle normalization: lowercase host+path, strip
     scheme, strip a leading www., strip trailing slash. No network access."""
@@ -626,6 +686,8 @@ class ProofMesh(gl.Contract):
 
     # TrustPolicyRecord: policy_id -> JSON
     trust_policies: TreeMap[str, str]
+    # policy versioning: policy name -> JSON array of policy_id, oldest to newest
+    trust_policy_versions: TreeMap[str, str]
 
     # monotonic id counters
     profile_count: u256
@@ -1844,3 +1906,160 @@ Return this exact JSON shape:
         if credential_id not in self.credential_challenges:
             raise gl.vm.UserError("Credential not found")
         return self.credential_challenges[credential_id]
+
+    # -- Stage 7: reusable trust policies --
+
+    @gl.public.write
+    def create_trust_policy(
+        self,
+        name: str,
+        credential_type: str,
+        minimum_confidence_bps: int,
+        minimum_independent_signals: int,
+        require_no_active_challenge: bool,
+        require_current_continuity: bool,
+        allowed_claim_types: list[str],
+    ) -> str:
+        if not name or len(name) > POLICY_NAME_MAX_LEN:
+            raise gl.vm.UserError(f"Policy name must be 1-{POLICY_NAME_MAX_LEN} characters")
+        if credential_type not in CREDENTIAL_TYPES:
+            allowed = ", ".join(sorted(CREDENTIAL_TYPES))
+            raise gl.vm.UserError(f"credential_type must be one of: {allowed}")
+
+        if isinstance(minimum_confidence_bps, bool) or not isinstance(
+            minimum_confidence_bps, int
+        ):
+            raise gl.vm.UserError("minimum_confidence_bps must be an integer")
+        if minimum_confidence_bps < BPS_MIN or minimum_confidence_bps > BPS_MAX:
+            raise gl.vm.UserError(
+                f"minimum_confidence_bps must be between {BPS_MIN} and {BPS_MAX}"
+            )
+
+        if isinstance(minimum_independent_signals, bool) or not isinstance(
+            minimum_independent_signals, int
+        ):
+            raise gl.vm.UserError("minimum_independent_signals must be an integer")
+        if (
+            minimum_independent_signals < 0
+            or minimum_independent_signals > MAX_MINIMUM_INDEPENDENT_SIGNALS
+        ):
+            raise gl.vm.UserError(
+                f"minimum_independent_signals must be between 0 and "
+                f"{MAX_MINIMUM_INDEPENDENT_SIGNALS}"
+            )
+
+        if not isinstance(require_no_active_challenge, bool):
+            raise gl.vm.UserError("require_no_active_challenge must be a boolean")
+        if not isinstance(require_current_continuity, bool):
+            raise gl.vm.UserError("require_current_continuity must be a boolean")
+
+        if not allowed_claim_types:
+            raise gl.vm.UserError("allowed_claim_types must not be empty")
+        if len(allowed_claim_types) != len(set(allowed_claim_types)):
+            raise gl.vm.UserError("allowed_claim_types must not contain duplicates")
+        for claim_type in allowed_claim_types:
+            if claim_type not in ALLOWED_CLAIM_TYPES:
+                allowed = ", ".join(sorted(ALLOWED_CLAIM_TYPES))
+                raise gl.vm.UserError(f"allowed_claim_types entries must be one of: {allowed}")
+
+        existing_ids = json.loads(self.trust_policy_versions.get(name, "[]"))
+        version = len(existing_ids) + 1
+
+        now_iso = datetime.now().isoformat()
+        seed = f"{name}|{version}|{now_iso}|{int(self.trust_policy_count)}"
+        policy_id = "policy-" + hashlib.sha256(seed.encode()).hexdigest()[:16]
+        if policy_id in self.trust_policies:
+            raise gl.vm.UserError("Policy ID collision, please retry")
+
+        # A new version of an existing named policy supersedes it: only the
+        # newest version of a given name is ACTIVE, older ones become
+        # INACTIVE but remain fully queryable (never deleted or mutated
+        # beyond this one status flip).
+        if existing_ids:
+            previous_id = existing_ids[-1]
+            previous = json.loads(self.trust_policies[previous_id])
+            previous["status"] = "INACTIVE"
+            self.trust_policies[previous_id] = json.dumps(previous)
+
+        policy_data = {
+            "id": policy_id,
+            "creator": gl.message.sender_address.as_hex,
+            "name": name,
+            "credential_type": credential_type,
+            "minimum_confidence_bps": minimum_confidence_bps,
+            "minimum_independent_signals": minimum_independent_signals,
+            "require_no_active_challenge": require_no_active_challenge,
+            "require_current_continuity": require_current_continuity,
+            "allowed_claim_types": allowed_claim_types,
+            "status": "ACTIVE",
+            "version": version,
+            "created_at": now_iso,
+        }
+        self.trust_policies[policy_id] = json.dumps(policy_data)
+
+        existing_ids.append(policy_id)
+        self.trust_policy_versions[name] = json.dumps(existing_ids)
+        self.trust_policy_count = u256(int(self.trust_policy_count) + 1)
+
+        return policy_id
+
+    @gl.public.view
+    def get_trust_policy(self, policy_id: str) -> str:
+        if policy_id not in self.trust_policies:
+            raise gl.vm.UserError("Trust policy not found")
+        return self.trust_policies[policy_id]
+
+    @gl.public.view
+    def get_trust_policy_versions(self, name: str) -> str:
+        if name not in self.trust_policy_versions:
+            raise gl.vm.UserError("No trust policy exists with this name")
+        return self.trust_policy_versions[name]
+
+    @gl.public.view
+    def list_trust_policies(self) -> str:
+        return json.dumps([json.loads(v) for v in self.trust_policies.values()])
+
+    @gl.public.view
+    def evaluate_policy_view(self, profile_id: str, policy_id: str, credential_id: str) -> str:
+        """Deterministic policy check against already-finalized on-chain
+        state. No LLM call: every input here is numeric/set comparison over
+        Stage 4-6 output, never subjective judgment. Signature takes an
+        explicit credential_id (rather than just profile_id/policy_id)
+        because a profile may hold multiple credentials (e.g. after a
+        Stage 6 TRANSFER) -- the caller names which one to check."""
+        if policy_id not in self.trust_policies:
+            raise gl.vm.UserError("Trust policy not found")
+        if profile_id not in self.profiles:
+            raise gl.vm.UserError("Profile not found")
+        if credential_id not in self.credentials:
+            raise gl.vm.UserError("Credential not found")
+
+        policy = json.loads(self.trust_policies[policy_id])
+        credential = json.loads(self.credentials[credential_id])
+
+        evidence_claim_types = set()
+        for proof_id in credential["evidence_refs"]:
+            if proof_id in self.proofs:
+                proof = json.loads(self.proofs[proof_id])
+                claim_id = proof["claim_id"]
+                if claim_id in self.claims:
+                    evidence_claim_types.add(json.loads(self.claims[claim_id])["claim_type"])
+
+        satisfied, failure_reasons, continuity_current, active_challenge = (
+            _evaluate_policy_deterministic(policy, credential, profile_id, evidence_claim_types)
+        )
+
+        return json.dumps(
+            {
+                "satisfied": satisfied,
+                "policy_id": policy_id,
+                "profile_id": profile_id,
+                "credential_id": credential_id,
+                "credential_type": credential["credential_type"],
+                "confidence_bps": int(credential["confidence_bps"]),
+                "independent_signal_count": int(credential["independent_signal_count"]),
+                "continuity_current": continuity_current,
+                "active_challenge": active_challenge,
+                "failure_reasons": failure_reasons,
+            }
+        )

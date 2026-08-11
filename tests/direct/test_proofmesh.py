@@ -1768,8 +1768,295 @@ class TestConflicts:
             contract.evaluate_identity_challenge(challenge_id)
 
 
+def _create_policy(
+    contract,
+    name="VERIFIED_DEVELOPER_V2",
+    credential_type="VERIFIED_DEVELOPER",
+    min_conf=8000,
+    min_signals=1,
+    require_no_challenge=True,
+    require_continuity=True,
+    claim_types=None,
+):
+    claim_types = claim_types or ["GITHUB_PROFILE", "PERSONAL_WEBSITE", "X_PROFILE"]
+    return contract.create_trust_policy(
+        name, credential_type, min_conf, min_signals,
+        require_no_challenge, require_continuity, claim_types,
+    )
+
+
 class TestTrustPolicies:
-    pass
+    def test_create_valid_policy(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+
+        policy_id = _create_policy(contract)
+        policy = json.loads(contract.get_trust_policy(policy_id))
+        assert policy["name"] == "VERIFIED_DEVELOPER_V2"
+        assert policy["credential_type"] == "VERIFIED_DEVELOPER"
+        assert policy["minimum_confidence_bps"] == 8000
+        assert policy["minimum_independent_signals"] == 1
+        assert policy["require_no_active_challenge"] is True
+        assert policy["require_current_continuity"] is True
+        assert policy["allowed_claim_types"] == ["GITHUB_PROFILE", "PERSONAL_WEBSITE", "X_PROFILE"]
+        assert policy["status"] == "ACTIVE"
+        assert policy["version"] == 1
+        assert policy["creator"].lower() == as_hex(direct_alice).lower()
+
+        status = json.loads(contract.get_protocol_status())
+        assert status["trust_policy_count"] == 1
+
+    def test_invalid_bps_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+
+        with direct_vm.expect_revert("minimum_confidence_bps must be between 0 and 10000"):
+            _create_policy(contract, min_conf=15000)
+
+    def test_invalid_signal_minimum_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+
+        with direct_vm.expect_revert(
+            "minimum_independent_signals must be between 0 and 20"
+        ):
+            _create_policy(contract, min_signals=-1)
+
+    def test_unsupported_credential_type_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+
+        with direct_vm.expect_revert("credential_type must be one of"):
+            _create_policy(contract, credential_type="NOT_A_REAL_TYPE")
+
+    def test_unsupported_claim_type_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+
+        with direct_vm.expect_revert("allowed_claim_types entries must be one of"):
+            _create_policy(contract, claim_types=["NOT_A_CLAIM_TYPE"])
+
+    def test_policy_versioning(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+
+        policy_id_v1 = _create_policy(contract, min_conf=7000)
+        policy_id_v2 = _create_policy(contract, min_conf=8000)
+        assert policy_id_v1 != policy_id_v2
+
+        v1 = json.loads(contract.get_trust_policy(policy_id_v1))
+        v2 = json.loads(contract.get_trust_policy(policy_id_v2))
+        assert v1["version"] == 1
+        assert v2["version"] == 2
+        assert v1["status"] == "INACTIVE"
+        assert v2["status"] == "ACTIVE"
+
+        versions = json.loads(contract.get_trust_policy_versions("VERIFIED_DEVELOPER_V2"))
+        assert versions == [policy_id_v1, policy_id_v2]
+
+        all_policies = json.loads(contract.list_trust_policies())
+        assert len(all_policies) == 2
+
+    def test_active_policy_passes(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract)
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is True
+        assert result["failure_reasons"] == []
+        assert result["policy_id"] == policy_id
+        assert result["profile_id"] == "profile-1"
+        assert result["credential_id"] == credential_id
+        assert result["credential_type"] == "VERIFIED_DEVELOPER"
+        assert result["confidence_bps"] == 9000
+        assert result["independent_signal_count"] == 1
+        assert result["continuity_current"] is True
+        assert result["active_challenge"] is False
+
+    def test_wrong_credential_type_fails(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract, credential_type="VERIFIED_ORG_REPRESENTATIVE")
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "CREDENTIAL_TYPE_MISMATCH" in result["failure_reasons"]
+
+    def test_insufficient_confidence_fails(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract, min_conf=9500)  # credential has 9000
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "CONFIDENCE_BELOW_MINIMUM" in result["failure_reasons"]
+
+    def test_insufficient_independent_signals_fails(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract, min_signals=2)  # credential has 1
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "INSUFFICIENT_INDEPENDENT_SIGNALS" in result["failure_reasons"]
+
+    def test_active_challenge_fails_when_forbidden(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        contract.open_identity_challenge(credential_id, "", "PROOF_STALE", "Stale evidence.")
+        policy_id = _create_policy(contract, require_no_challenge=True)
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "ACTIVE_CHALLENGE_PRESENT" in result["failure_reasons"]
+        assert result["active_challenge"] is True
+
+    def test_stale_continuity_fails_when_required(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        direct_vm.warp("2030-01-31T03:00:00Z")
+        continuity_id = contract.request_continuity_check("profile-1", credential_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "Still Alex Dev."})
+        direct_vm.mock_llm(r".*", _fenced(CONTINUITY_RECHECK_DUE_VERDICT))
+        contract.evaluate_continuity(continuity_id)
+        direct_vm.clear_mocks()
+
+        policy_id = _create_policy(contract, require_continuity=True)
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "CONTINUITY_NOT_CURRENT" in result["failure_reasons"]
+        assert result["continuity_current"] is False
+
+        # Same credential, but a policy that doesn't require current
+        # continuity still passes on this axis.
+        policy_id_lenient = _create_policy(
+            contract, name="LENIENT_V1", require_continuity=False
+        )
+        lenient_result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id_lenient, credential_id)
+        )
+        assert "CONTINUITY_NOT_CURRENT" not in lenient_result["failure_reasons"]
+
+    def test_expired_credential_fails(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract)
+        direct_vm.warp("2030-04-15T00:00:00Z")  # past the 90-day credential validity
+
+        # Touch the credential once so the deterministic expiry side effect
+        # actually flips its stored status (evaluate_policy_view itself is a
+        # pure view and does not mutate state).
+        with direct_vm.expect_revert("EXPIRED"):
+            contract.request_continuity_check("profile-1", credential_id)
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert any(r.startswith("CREDENTIAL_STATUS_NOT_ELIGIBLE") for r in result["failure_reasons"])
+
+    def test_revoked_credential_fails(self, direct_deploy, direct_vm, direct_alice, direct_bob):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CLAIM_FABRICATED", "Fabricated evidence."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.freeze_identity_challenge(challenge_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        direct_vm.mock_llm(r".*", _fenced(REVOKE_VERDICT))
+        contract.evaluate_identity_challenge(challenge_id)
+        direct_vm.clear_mocks()
+
+        policy_id = _create_policy(contract)
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "CREDENTIAL_STATUS_NOT_ELIGIBLE:REVOKED" in result["failure_reasons"]
+
+    def test_transferred_old_credential_fails(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        challenge_id = contract.open_identity_challenge(
+            credential_id, "profile-2", "CONFLICTING_WALLET_CLAIM", "Competing claim."
+        )
+        contract.submit_challenge_evidence(challenge_id, "proof-1")
+        contract.submit_challenge_evidence(challenge_id, "proof-2")
+        contract.freeze_identity_challenge(challenge_id)
+        direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": "x"})
+        direct_vm.mock_llm(r".*", _fenced(TRANSFER_VERDICT))
+        contract.evaluate_identity_challenge(challenge_id)
+        direct_vm.clear_mocks()
+
+        policy_id = _create_policy(contract)
+
+        old_result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert old_result["satisfied"] is False
+        assert "CREDENTIAL_STATUS_NOT_ELIGIBLE:TRANSFERRED" in old_result["failure_reasons"]
+
+        new_credential_id = json.loads(contract.get_profile_credential_ids("profile-2"))[0]
+        new_result = json.loads(
+            contract.evaluate_policy_view("profile-2", policy_id, new_credential_id)
+        )
+        assert new_result["satisfied"] is True
+
+    def test_deterministic_repeated_evaluation(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract)
+
+        first = contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        second = contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        third = contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        assert first == second == third
+
+    def test_historical_policies_remain_queryable(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+        policy_id_v1 = _create_policy(contract, min_conf=7000)
+        _create_policy(contract, min_conf=8000)
+        _create_policy(contract, min_conf=9000)
+
+        v1 = json.loads(contract.get_trust_policy(policy_id_v1))
+        assert v1["version"] == 1
+        assert v1["status"] == "INACTIVE"
+        assert v1["minimum_confidence_bps"] == 7000
+
+    def test_evaluate_unknown_policy_rejected(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        with direct_vm.expect_revert("Trust policy not found"):
+            contract.evaluate_policy_view("profile-1", "no-such-policy", credential_id)
+
+    def test_evaluate_credential_profile_mismatch(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract, credential_id = _open_dispute_ready(
+            direct_deploy, direct_vm, direct_alice, direct_bob
+        )
+        policy_id = _create_policy(contract)
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-2", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "CREDENTIAL_PROFILE_MISMATCH" in result["failure_reasons"]
 
 
 class TestAccessControl:
