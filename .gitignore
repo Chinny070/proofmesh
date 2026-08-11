@@ -1,0 +1,9 @@
+node_modules/
+frontend/dist/
+frontend/.env
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
+gltest.config.yaml
