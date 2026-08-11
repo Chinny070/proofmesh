@@ -1965,6 +1965,30 @@ class TestTrustPolicies:
         assert result["satisfied"] is False
         assert any(r.startswith("CREDENTIAL_STATUS_NOT_ELIGIBLE") for r in result["failure_reasons"])
 
+    def test_untouched_expired_credential_fails_policy_view(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        """Stage 8 audit fix: evaluate_policy_view is a pure view and can't
+        apply the write-path _expire_if_due() storage flip. A credential
+        whose stored status still literally says ACTIVE, but whose
+        expires_at has already passed and nothing has written to it yet,
+        must still fail policy evaluation -- not silently pass because no
+        write has "noticed" the expiry."""
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+        policy_id = _create_policy(contract)
+        direct_vm.warp("2030-04-15T00:00:00Z")  # past the 90-day credential validity
+
+        # Confirm the stored status is untouched (still ACTIVE) before checking.
+        stored = json.loads(contract.get_credential(credential_id))
+        assert stored["status"] == "ACTIVE"
+
+        result = json.loads(
+            contract.evaluate_policy_view("profile-1", policy_id, credential_id)
+        )
+        assert result["satisfied"] is False
+        assert "CREDENTIAL_STATUS_NOT_ELIGIBLE:EXPIRED" in result["failure_reasons"]
+        assert result["continuity_current"] is False
+
     def test_revoked_credential_fails(self, direct_deploy, direct_vm, direct_alice, direct_bob):
         contract, credential_id = _open_dispute_ready(
             direct_deploy, direct_vm, direct_alice, direct_bob
@@ -2057,6 +2081,48 @@ class TestTrustPolicies:
         )
         assert result["satisfied"] is False
         assert "CREDENTIAL_PROFILE_MISMATCH" in result["failure_reasons"]
+
+
+class TestAggregateViews:
+    """Stage 8 audit fix: build brief section 7 requires get_identity_status,
+    list_profiles, and list_credentials, which were missing through Stage 7."""
+
+    def test_get_identity_status(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        status = json.loads(contract.get_identity_status("profile-1"))
+        assert status["profile_id"] == "profile-1"
+        assert status["status"] == "CREDENTIALED"
+        assert status["continuity_status"] == "NONE"
+        assert status["active_challenge_id"] == ""
+        assert status["claim_count"] == 1
+        assert status["credential_count"] == 1
+        assert status["claim_ids"] == ["claim-1"]
+        assert status["credential_ids"] == [credential_id]
+
+    def test_get_identity_status_unknown_profile_rejected(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+        with direct_vm.expect_revert("Profile not found"):
+            contract.get_identity_status("no-such-profile")
+
+    def test_list_profiles(self, direct_deploy, direct_vm, direct_alice):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+        contract.create_identity_profile("profile-1")
+        contract.create_identity_profile("profile-2")
+
+        profiles = json.loads(contract.list_profiles())
+        assert {p["id"] for p in profiles} == {"profile-1", "profile-2"}
+
+    def test_list_credentials(self, direct_deploy, direct_vm, direct_alice):
+        contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)
+
+        credentials = json.loads(contract.list_credentials())
+        assert len(credentials) == 1
+        assert credentials[0]["id"] == credential_id
 
 
 class TestAccessControl:

@@ -486,10 +486,18 @@ def _evaluate_policy_deterministic(
     credential: dict,
     profile_id: str,
     evidence_claim_types: set,
+    now: datetime,
 ) -> tuple:
     """Pure, deterministic policy-vs-credential comparison. No LLM call --
     every field here is already finalized on-chain state (Stage 4-6 output),
-    so this is ordinary numeric/set comparison, never subjective judgment."""
+    so this is ordinary numeric/set comparison, never subjective judgment.
+
+    evaluate_policy_view is a @gl.public.view and cannot write, so it can't
+    apply the same _expire_if_due() storage flip that write paths use. A
+    credential whose stored status still says ACTIVE/RECHECK_DUE but whose
+    expires_at has already passed must not silently satisfy a policy just
+    because no write has touched it yet -- so expiry is re-checked here
+    against the *stored* expires_at, independent of the stored status."""
     failure_reasons = []
 
     if policy["status"] != "ACTIVE":
@@ -499,10 +507,13 @@ def _evaluate_policy_deterministic(
         failure_reasons.append("CREDENTIAL_PROFILE_MISMATCH")
 
     status = credential["status"]
-    if status not in _POLICY_ELIGIBLE_CREDENTIAL_STATUSES:
+    time_expired = now > _parse_iso(credential["expires_at"], "expires_at")
+    if time_expired and status in _POLICY_ELIGIBLE_CREDENTIAL_STATUSES:
+        failure_reasons.append("CREDENTIAL_STATUS_NOT_ELIGIBLE:EXPIRED")
+    elif status not in _POLICY_ELIGIBLE_CREDENTIAL_STATUSES:
         failure_reasons.append(f"CREDENTIAL_STATUS_NOT_ELIGIBLE:{status}")
 
-    continuity_current = status == "ACTIVE"
+    continuity_current = status == "ACTIVE" and not time_expired
     if policy["require_current_continuity"] and not continuity_current:
         failure_reasons.append("CONTINUITY_NOT_CURRENT")
 
@@ -880,6 +891,32 @@ class ProofMesh(gl.Contract):
             raise gl.vm.UserError("Profile not found")
         return self.profile_claims[profile_id]
 
+    @gl.public.view
+    def get_identity_status(self, profile_id: str) -> str:
+        """Aggregate status summary for a profile: build brief section 7's
+        get_identity_status(...). Reads across the already-populated
+        per-profile index maps rather than re-deriving anything."""
+        if profile_id not in self.profiles:
+            raise gl.vm.UserError("Profile not found")
+        profile = json.loads(self.profiles[profile_id])
+        return json.dumps(
+            {
+                "profile_id": profile_id,
+                "owner": profile["owner"],
+                "status": profile["status"],
+                "continuity_status": profile["continuity_status"],
+                "active_challenge_id": profile["active_challenge_id"],
+                "claim_count": profile["claim_count"],
+                "credential_count": profile["credential_count"],
+                "claim_ids": json.loads(self.profile_claims.get(profile_id, "[]")),
+                "credential_ids": json.loads(self.profile_credentials.get(profile_id, "[]")),
+            }
+        )
+
+    @gl.public.view
+    def list_profiles(self) -> str:
+        return json.dumps([json.loads(v) for v in self.profiles.values()])
+
     # -- Stage 3: proof submission and evaluation-freeze --
 
     @gl.public.write
@@ -1246,6 +1283,10 @@ Return this exact JSON shape:
         if credential_id not in self.credentials:
             raise gl.vm.UserError("Credential not found")
         return self.credentials[credential_id]
+
+    @gl.public.view
+    def list_credentials(self) -> str:
+        return json.dumps([json.loads(v) for v in self.credentials.values()])
 
     @gl.public.view
     def get_profile_credential_ids(self, profile_id: str) -> str:
@@ -2046,7 +2087,9 @@ Return this exact JSON shape:
                     evidence_claim_types.add(json.loads(self.claims[claim_id])["claim_type"])
 
         satisfied, failure_reasons, continuity_current, active_challenge = (
-            _evaluate_policy_deterministic(policy, credential, profile_id, evidence_claim_types)
+            _evaluate_policy_deterministic(
+                policy, credential, profile_id, evidence_claim_types, datetime.now()
+            )
         )
 
         return json.dumps(
