@@ -872,3 +872,75 @@ tbody tr:last-child td {
 .breadcrumb a {
   color: var(--text-dim);
 }
+
+/* -- Code blocks (Integration Hub) --------------------------------------- */
+
+.codeblock {
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.42);
+  margin: 0.75rem 0;
+  overflow: hidden;
+}
+.codeblock-head {
+  padding: 0.4rem 0.6rem 0.4rem 0.85rem;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.3);
+  gap: 0.75rem;
+}
+.codeblock pre {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+}
+.codeblock code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--mesh-lilac);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre;
+  word-break: normal;
+}
+
+/* -- Demo steps ---------------------------------------------------------- */
+
+.demo-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  counter-reset: demo;
+}
+.demo-steps > li[data-done="true"] {
+  border-color: rgba(53, 231, 181, 0.45);
+}
+.demo-num {
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline-strong);
+  color: var(--text-dim);
+}
+.demo-steps > li[data-done="true"] .demo-num {
+  background: var(--trust-mint);
+  border-color: var(--trust-mint);
+  color: var(--ink);
+}
+.demo-body {
+  margin-top: 0.6rem;
+  color: var(--text-dim);
+}
+.demo-body p:last-child {
+  margin-bottom: 0;
+}

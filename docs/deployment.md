@@ -145,6 +145,41 @@ text.
 credential issuance) — any non-empty string ≤ 100 chars works for this
 smoke test.
 
+## Browser-wallet verification checklist
+
+**Status: not yet performed.** No write transaction has been sent to the
+deployed contract. The development environment has no injected browser
+wallet, so every write path below is implemented and type-checked but
+unexercised against a live wallet. These steps must be run manually in a
+browser with a GenLayer-compatible wallet before the app is considered
+release-verified.
+
+Run the frontend (`cd frontend && npm run dev`), then work through this in
+order. Each step must reach **finalized success** — a transaction hash is
+not success.
+
+| # | Step | Where | Expected result |
+|---|---|---|---|
+| 1 | **Connect wallet** | `/account` | Address shown, "Connected to StudioNet" badge |
+| 2 | **Switch / add StudioNet** | `/account` | If on another chain, "Switch to StudioNet" adds chain 61999 via `wallet_switchEthereumChain`, falling back to `wallet_addEthereumChain` on error 4902 |
+| 3 | **Create profile** | `/identity/new` | Transaction reaches `finalized_success`; redirects to the Claim Wizard; profile appears in `/identity` |
+| 4 | **Create claim** | `/identity/:id/claims` | Claim listed with status `PENDING` |
+| 5 | **Issue challenge** | `/identity/:id/claims` | Claim moves to `CHALLENGE_ISSUED`; **the exact challenge text is displayed and copyable** — confirm it matches `PROOFMESH\|PROFILE:…\|CLAIM:…\|WALLET:…\|NONCE:…\|EXP:…` |
+| 6 | **Publish challenge externally** | Off-site | Post the exact text at the claimed URL (gist, bio, page). Confirm it is publicly reachable without login |
+| 7 | **Submit proof** | `/identity/:id/claims` | Compute the SHA-256 via the in-page helper; claim moves to `PROOF_SUBMITTED` |
+| 8 | **Freeze evidence** | `/identity/:id/claims` | Claim → `FROZEN`, profile → `EVALUATION_FROZEN`; further claims/proofs are refused |
+| 9 | **Evaluate identity** | `/identity/:id/claims` | Nondeterministic — expect a longer wait. Verdict panel renders the real returned JSON |
+| 10 | **Verify finalized receipt** | Transaction panel | State reaches `finalized_success`, **not** merely `accepted`. Confirm the receipt's execution result is `FINISHED_WITH_RETURN` |
+| 11 | **Inspect credential** | `/identity/:id/credentials` | Real credential with type, status, confidence BPS, independent signals, reason codes, evidence refs, issue/expiry dates |
+
+Additional paths worth exercising once the above passes:
+
+- **Continuity** (`/identity/:id/continuity`) — request a check, then evaluate it. Note the recheck interval must have elapsed since issuance.
+- **Dispute** (`/identity/:id/credentials` → "Dispute this credential", then `/challenges/:id`) — open, submit evidence, freeze, adjudicate. Confirm a `TRANSFER` outcome preserves the original credential as `TRANSFERRED` and issues a new one to the competing profile.
+- **Trust policy** (`/policies`) — create a policy, then evaluate a real credential against it and confirm `failure_reasons` are accurate.
+
+**Do not record any of these as verified until they have actually been run.**
+
 ## Stage 8 audit summary
 
 - `genvm-lint check contracts/proofmesh.py --json`: clean (see

@@ -1,7 +1,7 @@
 # Security
 
 This document covers ProofMesh's evidence-handling, prompt-injection, and
-adjudication-safety model as implemented through Stage 8.
+adjudication-safety model as implemented in the deployed contract.
 
 ## The three nondeterministic adjudication points
 
@@ -151,3 +151,55 @@ write, it independently re-checks `expires_at` against the current time on
 every call — a Stage 8 audit fix (see `test_untouched_expired_credential_fails_policy_view`)
 that closes the gap where an untouched-but-time-expired credential could
 otherwise report `satisfied: true`.
+
+## Known limitations of this security model
+
+These are properties of the design, stated plainly rather than hedged.
+
+**ProofMesh proves control of public digital identities — not legal identity.**
+A credential attests that a wallet could publish a challenge at a set of
+public sources at a point in time. It makes no claim about legal identity,
+government identity, or personhood. It is not KYC and must not be used where
+KYC is legally required.
+
+**Control is not ownership or authorship.** Someone with temporary posting
+access to an account can satisfy a challenge. ProofMesh reports demonstrated
+control, which is a weaker and more honest claim than ownership.
+
+**External sources can disappear or change.** Sites go down, accounts are
+deleted, platforms change markup. Unreachable sources are classified as
+`SOURCE_INACCESSIBLE` and are explicitly *not* treated as evidence in either
+direction — a leader that cannot fetch a page does not guess.
+
+**Adjudication is nondeterministic and consensus-based.** Validators judge
+live web content under a comparative equivalence principle, not byte
+equality. Re-running an evaluation later may legitimately reach a different
+conclusion because the underlying web changed. This is a property of the
+problem, not a defect: the alternative is a trusted server.
+
+**Platform access varies.** Rate limits, login walls, geographic
+restrictions, and bot protection all affect what validators can retrieve. A
+source behind a login wall is effectively unverifiable.
+
+**Credentials go stale and can be contested.** A credential is a point-in-time
+judgement with an expiry. Consumers must check `status` and `expires_at`, not
+merely that a credential exists.
+
+**Independence assessment is bounded.** ProofMesh reports that a set of claims
+shows low independence confidence. It never asserts that two wallets belong
+to the same person, and no reason code in the allowlist makes that claim.
+
+**Prompt-injection defence is mitigation, not proof.** Fetched content is
+delimited, labelled untrusted, capped, and never used to select URLs or
+contract methods — and the deterministic post-consensus validator is the
+real gate, since no verdict can be accepted unless it passes fixed
+allowlist, type, range, and evidence-existence checks. But the leader prompt
+still contains attacker-influenced text, and no prompt-level defence is
+absolute. The security argument rests on the deterministic validator, not on
+the model behaving.
+
+**Write paths are unexercised against a live wallet.** All 13 write methods
+are covered by 127 direct contract tests, but no write transaction has been
+sent to the deployed contract from a real browser wallet — the development
+environment has no injected wallet. See
+[docs/deployment.md](deployment.md#browser-wallet-verification-checklist).

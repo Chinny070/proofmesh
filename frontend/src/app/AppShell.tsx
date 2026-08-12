@@ -5,6 +5,8 @@ const NAV = [
   { to: "/identity", label: "Identity" },
   { to: "/challenges", label: "Conflict Court" },
   { to: "/policies", label: "Trust Policies" },
+  { to: "/integration", label: "Integrate" },
+  { to: "/demo", label: "Demo" },
   { to: "/protocol", label: "Protocol" },
   { to: "/account", label: "Account" },
 ];

@@ -1,7 +1,8 @@
 # Credential Schema and Contract Method Inventory
 
-This document is the authoritative reference for `contracts/proofmesh.py` as of
-Stage 8 (contract completion gate). It covers every storage record, every
+This document is the authoritative reference for `contracts/proofmesh.py` as
+deployed at `0xfC0504f92783F1418e333AECb6CB587E24979e2a` on GenLayer
+StudioNet. It covers every storage record, every
 strict JSON verdict schema, the full method inventory, and the exact status
 transition tables.
 

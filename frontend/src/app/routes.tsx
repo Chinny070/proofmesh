@@ -23,6 +23,8 @@ const PoliciesPage = lazy(() => import("../pages/PoliciesPage"));
 const PolicyDetailPage = lazy(() => import("../pages/PolicyDetailPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
 const ProtocolPage = lazy(() => import("../pages/ProtocolPage"));
+const IntegrationPage = lazy(() => import("../pages/IntegrationPage"));
+const DemoPage = lazy(() => import("../pages/DemoPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 function page(Component: React.ComponentType) {
@@ -51,6 +53,8 @@ export const router = createBrowserRouter([
       { path: "policies/:policyId", element: page(PolicyDetailPage) },
       { path: "account", element: page(AccountPage) },
       { path: "protocol", element: page(ProtocolPage) },
+      { path: "integration", element: page(IntegrationPage) },
+      { path: "demo", element: page(DemoPage) },
       { path: "*", element: page(NotFoundPage) },
     ],
   },
