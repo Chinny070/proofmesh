@@ -6,6 +6,8 @@ ProofMesh is a reusable digital identity and trust-attestation protocol built on
 
 | | |
 |---|---|
+| **Live app** | https://proofmesh.vercel.app |
+| **Source** | https://github.com/Chinny070/proofmesh |
 | **Contract** | `0xfC0504f92783F1418e333AECb6CB587E24979e2a` |
 | **Network** | GenLayer StudioNet |
 | **Chain ID** | `61999` |
@@ -159,6 +161,16 @@ npm run verify:reads   # live read check against the deployed contract
 ```
 
 Reads need no wallet. Writes need an injected browser wallet on StudioNet.
+
+### Deployment
+
+The frontend is deployed to Vercel production at
+[proofmesh.vercel.app](https://proofmesh.vercel.app), built from `frontend/`
+with the three `VITE_*` variables above set in the Vercel project. SPA
+routing is handled by the rewrite rule in
+[`frontend/vercel.json`](frontend/vercel.json), so every route works on
+direct navigation and hard refresh. Contract deployment is documented
+separately in [docs/deployment.md](docs/deployment.md).
 
 ### Routes
 

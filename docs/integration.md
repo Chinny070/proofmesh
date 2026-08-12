@@ -10,7 +10,10 @@ ProofMesh is infrastructure. Another GenLayer application uses it by reading the
 | **RPC** | `https://studio.genlayer.com/api` |
 | **Schema** | [docs/deployed-schema.json](deployed-schema.json) — fetched from the contract itself |
 
-The in-app **Integration Hub** at `/integration` presents this same material with copyable snippets and live values from the deployment.
+The in-app **Integration Hub** at
+[proofmesh.vercel.app/integration](https://proofmesh.vercel.app/integration)
+presents this same material with copyable snippets and live values from the
+deployment.
 
 ---
 

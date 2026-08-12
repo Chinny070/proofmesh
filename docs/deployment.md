@@ -1,7 +1,8 @@
 # Deployment
 
-**Status: deployed to GenLayer StudioNet.** Deployed manually through
-GenLayer Studio (not via CLI).
+**Status: contract deployed to GenLayer StudioNet; frontend deployed to
+Vercel production.** The contract was deployed manually through GenLayer
+Studio (not via CLI).
 
 | Setting | Value |
 |---|---|
@@ -9,6 +10,8 @@ GenLayer Studio (not via CLI).
 | Network | GenLayer StudioNet |
 | Chain ID | `61999` |
 | RPC | `https://studio.genlayer.com/api` |
+| Frontend (production) | https://proofmesh.vercel.app |
+| Source repository | https://github.com/Chinny070/proofmesh |
 
 Post-deployment verification (schema inspection + live read-only calls) is
 complete — see [Post-deployment verification result](#post-deployment-verification-result)
@@ -144,6 +147,56 @@ text.
 7's `create_trust_policy`/`evaluate_policy_view` are separate from
 credential issuance) — any non-empty string ≤ 100 chars works for this
 smoke test.
+
+## Frontend deployment (Vercel)
+
+**Status: deployed to production.**
+
+| Setting | Value |
+|---|---|
+| Production URL | https://proofmesh.vercel.app |
+| Vercel project | `proofmesh` (scope `chinny070s-projects`) |
+| Root directory | `frontend/` |
+| Framework preset | Vite |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+
+### Environment variables
+
+Set in the Vercel project for Production, Preview, and Development:
+
+```
+VITE_GENLAYER_RPC_URL=https://studio.genlayer.com/api
+VITE_GENLAYER_CHAIN_ID=61999
+VITE_PROOFMESH_CONTRACT_ADDRESS=0xfC0504f92783F1418e333AECb6CB587E24979e2a
+```
+
+None of these are secrets — they are a public RPC endpoint, a public chain
+ID, and a public contract address, all of which ship in the client bundle
+by design. No private key, API key, or credential is used by the frontend
+or stored in the Vercel project.
+
+### SPA routing
+
+[`frontend/vercel.json`](../frontend/vercel.json) rewrites `/(.*)` to
+`/index.html`, so client-side routes resolve on direct navigation and hard
+refresh rather than returning 404.
+
+### Production verification performed
+
+All nine routes were checked directly (fresh HTTP request per path, not
+client-side navigation) and returned HTTP 200 with the SPA root element:
+
+```text
+/  /identity  /identity/new  /challenges  /policies
+/protocol  /integration  /demo  /account
+```
+
+In-browser against the production origin: every route rendered its expected
+heading, zero console errors, the page issued a live request to
+`https://studio.genlayer.com/api`, protocol counters loaded from chain
+state, and the only contract address rendered anywhere was
+`0xfC0504f92783F1418e333AECb6CB587E24979e2a`.
 
 ## Browser-wallet verification checklist
 
