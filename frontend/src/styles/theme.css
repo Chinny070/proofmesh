@@ -1,0 +1,189 @@
+/**
+ * ProofMesh design system.
+ * Direction: biometric network atlas meets evidentiary trust console.
+ * Deliberately not a generic purple Web3 dashboard — dark ink-and-teal
+ * substrate, lime as the single high-energy action colour, and a strict
+ * evidentiary status palette.
+ */
+
+:root {
+  /* Spec palette */
+  --synapse-lime: #c8ff38;
+  --conflict-coral: #ff5368;
+  --deep-cyan: #003d4d;
+  --proof-amber: #ffb21a;
+  --mesh-lilac: #d4c2ff;
+  --night-violet: #1b0d2a;
+  --trust-mint: #35e7b5;
+  --risk-rose: #9f355b;
+  --paper-bone: #f2ebdd;
+  --finality-blue: #316cff;
+  --ink: #171717;
+  --ice: #f7faf9;
+
+  /* Substrate */
+  --bg: var(--night-violet);
+  --bg-deep: #12081d;
+  --surface: #241236;
+  --surface-2: #2e1844;
+  --surface-3: #3a2154;
+  --hairline: rgba(212, 194, 255, 0.16);
+  --hairline-strong: rgba(212, 194, 255, 0.32);
+
+  /* Type */
+  --text: #e9e2f5;
+  --text-dim: #a99bc0;
+  --text-faint: #7e719a;
+  --text-on-light: var(--ink);
+
+  --sans: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  /* Rhythm */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 14px;
+  --r-xl: 22px;
+
+  --shadow-lift: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  --glow-lime: 0 0 0 1px rgba(200, 255, 56, 0.4), 0 0 24px -6px rgba(200, 255, 56, 0.5);
+
+  color-scheme: dark;
+  font: 16px/1.55 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Status → colour mapping. Single source of truth for every badge,
+   mesh edge, and timeline node in the app. */
+:root {
+  --st-active: var(--trust-mint);
+  --st-recheck: var(--proof-amber);
+  --st-stale: var(--text-faint);
+  --st-challenged: var(--conflict-coral);
+  --st-transferred: var(--mesh-lilac);
+  --st-revoked: var(--risk-rose);
+  --st-expired: #6d6480;
+  --st-pending: var(--finality-blue);
+  --st-verified: var(--synapse-lime);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -5%, rgba(0, 61, 77, 0.55), transparent 60%),
+    radial-gradient(900px 500px at 95% 0%, rgba(212, 194, 255, 0.1), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: #fff;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.5rem;
+}
+
+h1 {
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.6rem);
+}
+h2 {
+  font-size: clamp(1.25rem, 1rem + 1vw, 1.6rem);
+}
+h3 {
+  font-size: 1.075rem;
+}
+
+p {
+  margin: 0 0 0.75rem;
+}
+
+a {
+  color: var(--synapse-lime);
+  text-decoration-color: rgba(200, 255, 56, 0.4);
+  text-underline-offset: 3px;
+}
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--mono);
+  font-size: 0.875em;
+}
+
+code {
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 0.1em 0.4em;
+  word-break: break-all;
+}
+
+/* Universal focus treatment — visible on every interactive element. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--synapse-lime);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--synapse-lime);
+  color: var(--ink);
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--r-md);
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 0.5rem;
+}

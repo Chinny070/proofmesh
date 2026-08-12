@@ -45,25 +45,57 @@ export function normalizeError(err: unknown): NormalizedError {
     }
   }
 
-  const message = err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  const message = tidyMessage(raw);
 
-  if (/wrong chain|configured for chain|switch your wallet/i.test(message)) {
+  if (/wrong chain|configured for chain|switch your wallet/i.test(raw)) {
     return { category: "wrong_network", message, cause: err };
   }
 
-  if (/timed out waiting for transaction/i.test(message)) {
+  if (/timed out waiting for transaction/i.test(raw)) {
     return { category: "timeout", message, cause: err };
   }
 
-  if (/UserError|revert|VM execution error/i.test(message)) {
-    return { category: "contract_revert", message, cause: err };
+  // GenVM surfaces contract reverts through viem as a generic
+  // "execution failed" / invalid-parameters wrapper, so match both the
+  // explicit forms and that wrapper.
+  if (/UserError|revert|VM execution error|execution failed|Missing or invalid parameters/i.test(raw)) {
+    return {
+      category: "contract_revert",
+      message: extractContractMessage(raw) ?? message,
+      cause: err,
+    };
   }
 
-  if (/fetch|network|ECONNREFUSED|Failed to fetch/i.test(message)) {
+  if (/fetch|network|ECONNREFUSED|Failed to fetch/i.test(raw)) {
     return { category: "network_error", message, cause: err };
   }
 
   return { category: "unknown", message, cause: err };
+}
+
+/** Strips viem/SDK boilerplate that is noise to an end user. */
+function tidyMessage(message: string): string {
+  return message
+    .replace(/\s*Version:\s*viem@[\d.]+/gi, "")
+    .replace(/\s*Double check you have provided the correct parameters\.?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Pulls a contract-authored message out of the wrapper when present.
+ * ProofMesh raises `gl.vm.UserError("...")`, which can surface as
+ * `UserError(message='...')` or as a bare quoted string.
+ */
+function extractContractMessage(raw: string): string | null {
+  const userError = raw.match(/UserError\((?:message=)?['"](.+?)['"]\)/);
+  if (userError) return userError[1];
+
+  if (/execution failed|Missing or invalid parameters/i.test(raw)) {
+    return "The contract rejected this call. The record may not exist, or the arguments were invalid.";
+  }
+  return null;
 }
 
 export class WalletNotFoundError extends Error {

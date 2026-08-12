@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ContractCallError,
   getWriteClient,
@@ -9,6 +10,22 @@ import {
 import type { TxProgress } from "../../lib/genlayer";
 import { useWallet } from "../wallet/useWallet";
 
+const PENDING_STATES = [
+  "awaiting_signature",
+  "submitted",
+  "pending",
+  "accepted",
+  "awaiting_finality",
+];
+
+const ERROR_STATES = [
+  "finalized_execution_failed",
+  "rejected",
+  "timeout",
+  "wallet_required",
+  "wrong_network",
+];
+
 /**
  * Drives a single ProofMesh write through the full transaction lifecycle:
  *
@@ -18,20 +35,19 @@ import { useWallet } from "../wallet/useWallet";
  *                              | finalized_execution_failed
  *        -> rejected | timeout
  *
- * The returned hash alone is never treated as success -- `isSuccess` is
+ * The returned hash alone is never treated as success — `isSuccess` is
  * only true at `finalized_success`, after the finalized receipt confirms
- * successful contract execution.
+ * successful contract execution. Only then are contract reads invalidated.
  */
 export function useProofMeshWrite() {
   const wallet = useWallet();
+  const queryClient = useQueryClient();
   const [progress, setProgress] = useState<TxProgress>({ state: "idle" });
 
   const reset = useCallback(() => setProgress({ state: "idle" }), []);
 
   const execute = useCallback(
-    async (
-      submit: (account: `0x${string}`) => Promise<`0x${string}`>,
-    ): Promise<TxProgress> => {
+    async (submit: (account: `0x${string}`) => Promise<`0x${string}`>): Promise<TxProgress> => {
       if (!wallet.address) {
         const next: TxProgress = { state: "wallet_required" };
         setProgress(next);
@@ -49,37 +65,29 @@ export function useProofMeshWrite() {
       try {
         hash = await submit(wallet.address);
       } catch (err) {
-        const error =
-          err instanceof ContractCallError ? err.normalized : normalizeError(err);
+        const error = err instanceof ContractCallError ? err.normalized : normalizeError(err);
         const next: TxProgress = { state: "rejected", error };
         setProgress(next);
         return next;
       }
 
       const client = getWriteClient(wallet.address);
-      return trackTransaction(client, hash, setProgress);
+      const final = await trackTransaction(client, hash, setProgress);
+
+      if (final.state === "finalized_success") {
+        await queryClient.invalidateQueries({ queryKey: ["proofmesh"] });
+      }
+      return final;
     },
-    [wallet.address, wallet.chainId],
+    [wallet.address, wallet.chainId, queryClient],
   );
 
   return {
     progress,
     execute,
     reset,
-    isPending: [
-      "awaiting_signature",
-      "submitted",
-      "pending",
-      "accepted",
-      "awaiting_finality",
-    ].includes(progress.state),
+    isPending: PENDING_STATES.includes(progress.state),
     isSuccess: progress.state === "finalized_success",
-    isError: [
-      "finalized_execution_failed",
-      "rejected",
-      "timeout",
-      "wallet_required",
-      "wrong_network",
-    ].includes(progress.state),
+    isError: ERROR_STATES.includes(progress.state),
   };
 }

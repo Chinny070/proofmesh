@@ -1,71 +1,29 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { reads } from "../../lib/genlayer";
+import type {
+  ContinuityRecord,
+  CredentialRecord,
+  IdentityChallengeRecord,
+  IdentityClaim,
+  IdentityProfile,
+  IdentityStatusSummary,
+  PolicyEvaluationResult,
+  ProofRecord,
+  ProtocolStatus,
+  TrustPolicyRecord,
+} from "../../types/proofmesh";
 
 /**
- * Read hooks. Every deployed view returns a JSON-encoded string, so each
- * hook parses it into a typed shape. Reads never require a wallet -- they
- * go through the read-only client straight to the RPC endpoint.
+ * Typed read hooks over the deployed ProofMesh views. Every view returns a
+ * JSON-encoded string, so each hook parses into the domain type. Reads
+ * never require a wallet — they go through the read-only client.
  */
 
 function parse<T>(raw: string): T {
   return JSON.parse(raw) as T;
 }
 
-export interface ProtocolStatus {
-  profile_count: number;
-  claim_count: number;
-  proof_count: number;
-  credential_count: number;
-  continuity_count: number;
-  identity_challenge_count: number;
-  trust_policy_count: number;
-}
-
-export interface IdentityProfile {
-  id: string;
-  owner: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  claim_count: number;
-  credential_count: number;
-  active_challenge_id: string;
-  continuity_status: string;
-}
-
-export interface CredentialRecord {
-  id: string;
-  profile_id: string;
-  policy_id: string;
-  credential_type: string;
-  status: string;
-  confidence_bps: number;
-  independent_signal_count: number;
-  issued_at: string;
-  expires_at: string;
-  last_continuity_check: string;
-  unresolved_challenges: number;
-  reason_codes: string[];
-  evidence_refs: string[];
-  summary: string;
-}
-
-export interface TrustPolicyRecord {
-  id: string;
-  creator: string;
-  name: string;
-  credential_type: string;
-  minimum_confidence_bps: number;
-  minimum_independent_signals: number;
-  require_no_active_challenge: boolean;
-  require_current_continuity: boolean;
-  allowed_claim_types: string[];
-  status: string;
-  version: number;
-  created_at: string;
-}
-
-const STALE_TIME = 15_000;
+const STALE_TIME = 10_000;
 
 export function useProtocolStatus() {
   return useQuery({
@@ -83,6 +41,87 @@ export function useProfiles() {
   });
 }
 
+export function useProfile(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "profile", profileId],
+    queryFn: async () => parse<IdentityProfile>(await reads.getIdentityProfile(profileId!)),
+    enabled: Boolean(profileId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useIdentityStatus(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "identityStatus", profileId],
+    queryFn: async () =>
+      parse<IdentityStatusSummary>(await reads.getIdentityStatus(profileId!)),
+    enabled: Boolean(profileId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useProfileClaimIds(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "profileClaimIds", profileId],
+    queryFn: async () => parse<string[]>(await reads.getProfileClaimIds(profileId!)),
+    enabled: Boolean(profileId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+/** Fetches every claim belonging to a profile. */
+export function useProfileClaims(profileId: string | undefined) {
+  const claimIds = useProfileClaimIds(profileId);
+  const claimQueries = useQueries({
+    queries: (claimIds.data ?? []).map((claimId) => ({
+      queryKey: ["proofmesh", "claim", claimId],
+      queryFn: async () => parse<IdentityClaim>(await reads.getIdentityClaim(claimId)),
+      staleTime: STALE_TIME,
+    })),
+  });
+
+  return {
+    isLoading: claimIds.isLoading || claimQueries.some((q) => q.isLoading),
+    error: claimIds.error ?? claimQueries.find((q) => q.error)?.error ?? null,
+    data: claimQueries.every((q) => q.data)
+      ? (claimQueries.map((q) => q.data) as IdentityClaim[])
+      : undefined,
+  };
+}
+
+export function useClaim(claimId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "claim", claimId],
+    queryFn: async () => parse<IdentityClaim>(await reads.getIdentityClaim(claimId!)),
+    enabled: Boolean(claimId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useClaimProofIds(claimId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "claimProofIds", claimId],
+    queryFn: async () => parse<string[]>(await reads.getClaimProofIds(claimId!)),
+    enabled: Boolean(claimId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useProof(proofId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "proof", proofId],
+    queryFn: async () => parse<ProofRecord>(await reads.getIdentityProof(proofId!)),
+    enabled: Boolean(proofId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
 export function useCredentials() {
   return useQuery({
     queryKey: ["proofmesh", "credentials"],
@@ -91,10 +130,192 @@ export function useCredentials() {
   });
 }
 
+export function useCredential(credentialId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "credential", credentialId],
+    queryFn: async () => parse<CredentialRecord>(await reads.getCredential(credentialId!)),
+    enabled: Boolean(credentialId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useProfileCredentialIds(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "profileCredentialIds", profileId],
+    queryFn: async () => parse<string[]>(await reads.getProfileCredentialIds(profileId!)),
+    enabled: Boolean(profileId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+/** Fetches every credential belonging to a profile. */
+export function useProfileCredentials(profileId: string | undefined) {
+  const ids = useProfileCredentialIds(profileId);
+  const queries = useQueries({
+    queries: (ids.data ?? []).map((credentialId) => ({
+      queryKey: ["proofmesh", "credential", credentialId],
+      queryFn: async () => parse<CredentialRecord>(await reads.getCredential(credentialId)),
+      staleTime: STALE_TIME,
+    })),
+  });
+
+  return {
+    isLoading: ids.isLoading || queries.some((q) => q.isLoading),
+    error: ids.error ?? queries.find((q) => q.error)?.error ?? null,
+    data: queries.every((q) => q.data)
+      ? (queries.map((q) => q.data) as CredentialRecord[])
+      : undefined,
+  };
+}
+
+export function useContinuityStatus(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "continuityStatus", profileId],
+    queryFn: async () => parse<string>(await reads.getContinuityStatus(profileId!)),
+    enabled: Boolean(profileId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useCredentialContinuityIds(credentialId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "credentialContinuityIds", credentialId],
+    queryFn: async () => parse<string[]>(await reads.getCredentialContinuityIds(credentialId!)),
+    enabled: Boolean(credentialId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useContinuityRecords(credentialId: string | undefined) {
+  const ids = useCredentialContinuityIds(credentialId);
+  const queries = useQueries({
+    queries: (ids.data ?? []).map((continuityId) => ({
+      queryKey: ["proofmesh", "continuityRecord", continuityId],
+      queryFn: async () =>
+        parse<ContinuityRecord>(await reads.getContinuityRecord(continuityId)),
+      staleTime: STALE_TIME,
+    })),
+  });
+
+  return {
+    isLoading: ids.isLoading || queries.some((q) => q.isLoading),
+    error: ids.error ?? queries.find((q) => q.error)?.error ?? null,
+    data: queries.every((q) => q.data)
+      ? (queries.map((q) => q.data) as ContinuityRecord[])
+      : undefined,
+  };
+}
+
+export function useCredentialChallengeIds(credentialId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "credentialChallengeIds", credentialId],
+    queryFn: async () => parse<string[]>(await reads.getCredentialChallengeIds(credentialId!)),
+    enabled: Boolean(credentialId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useIdentityChallenge(challengeId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "challenge", challengeId],
+    queryFn: async () =>
+      parse<IdentityChallengeRecord>(await reads.getIdentityChallenge(challengeId!)),
+    enabled: Boolean(challengeId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+/**
+ * There is no `list_challenges` view on the contract, so the challenge
+ * index is derived: every credential's challenge-id list, fanned out.
+ */
+export function useAllChallenges() {
+  const credentials = useCredentials();
+  const idQueries = useQueries({
+    queries: (credentials.data ?? []).map((credential) => ({
+      queryKey: ["proofmesh", "credentialChallengeIds", credential.id],
+      queryFn: async () => parse<string[]>(await reads.getCredentialChallengeIds(credential.id)),
+      staleTime: STALE_TIME,
+    })),
+  });
+
+  const challengeIds = idQueries.flatMap((q) => q.data ?? []);
+  const challengeQueries = useQueries({
+    queries: challengeIds.map((challengeId) => ({
+      queryKey: ["proofmesh", "challenge", challengeId],
+      queryFn: async () =>
+        parse<IdentityChallengeRecord>(await reads.getIdentityChallenge(challengeId)),
+      staleTime: STALE_TIME,
+    })),
+  });
+
+  return {
+    isLoading:
+      credentials.isLoading ||
+      idQueries.some((q) => q.isLoading) ||
+      challengeQueries.some((q) => q.isLoading),
+    error:
+      credentials.error ??
+      idQueries.find((q) => q.error)?.error ??
+      challengeQueries.find((q) => q.error)?.error ??
+      null,
+    data: challengeQueries.every((q) => q.data)
+      ? (challengeQueries.map((q) => q.data) as IdentityChallengeRecord[])
+      : undefined,
+  };
+}
+
 export function useTrustPolicies() {
   return useQuery({
     queryKey: ["proofmesh", "trustPolicies"],
     queryFn: async () => parse<TrustPolicyRecord[]>(await reads.listTrustPolicies()),
     staleTime: STALE_TIME,
+  });
+}
+
+export function useTrustPolicy(policyId: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "trustPolicy", policyId],
+    queryFn: async () => parse<TrustPolicyRecord>(await reads.getTrustPolicy(policyId!)),
+    enabled: Boolean(policyId),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+export function useTrustPolicyVersions(name: string | undefined) {
+  return useQuery({
+    queryKey: ["proofmesh", "trustPolicyVersions", name],
+    queryFn: async () => parse<string[]>(await reads.getTrustPolicyVersions(name!)),
+    enabled: Boolean(name),
+    staleTime: STALE_TIME,
+    retry: false,
+  });
+}
+
+/**
+ * Deterministic policy evaluation. Disabled until all three ids are
+ * present so it never fires a malformed call.
+ */
+export function usePolicyEvaluation(
+  profileId: string | undefined,
+  policyId: string | undefined,
+  credentialId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ["proofmesh", "policyEvaluation", profileId, policyId, credentialId],
+    queryFn: async () =>
+      parse<PolicyEvaluationResult>(
+        await reads.evaluatePolicyView(profileId!, policyId!, credentialId!),
+      ),
+    enabled: Boolean(profileId && policyId && credentialId),
+    staleTime: STALE_TIME,
+    retry: false,
   });
 }
