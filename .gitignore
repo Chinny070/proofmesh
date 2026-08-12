@@ -9,3 +9,4 @@ __pycache__/
 gltest.config.yaml
 artifacts/
 .vercel/
+.claude/settings.local.json
