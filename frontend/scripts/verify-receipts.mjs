@@ -38,11 +38,15 @@ if (!Array.isArray(txs) || txs.length === 0) {
   process.exit(1);
 }
 
-/** Runs the shipped tracker against one already-finalized receipt. */
-async function outcomeFor(tx) {
-  const receipt = await client.getTransaction({ hash: tx.hash });
-  const stubClient = { waitForTransactionReceipt: async () => receipt };
-  return trackTransaction(stubClient, tx.hash, () => {});
+/**
+ * Runs the shipped tracker against one already-finalized receipt. The
+ * tracker polls via getTransaction, so the stub serves the real receipt
+ * from there — every transaction here is already terminal, so a single
+ * poll settles it.
+ */
+async function outcomeFor(receipt, hash) {
+  const stubClient = { getTransaction: async () => receipt };
+  return trackTransaction(stubClient, hash, () => {});
 }
 
 let failures = 0;
@@ -55,15 +59,49 @@ function check(label, actual, expected) {
 
 console.log(`Verifying receipt interpretation against ${txs.length} live transactions\n`);
 
+/** 6 = MAJORITY_AGREE, 7 = MAJORITY_DISAGREE (per the SDK's own mapping). */
+const CONSENSUS_AGREE_CODES = new Set([1, 6]);
+
 for (const tx of txs) {
   const leader = [].concat(tx.consensus_data?.leader_receipt ?? [])[0];
   const execResult = leader?.execution_result;
-  const expected =
-    execResult === "SUCCESS" ? "finalized_success" : "finalized_execution_failed";
 
-  const progress = await outcomeFor(tx);
-  console.log(`${tx.hash.slice(0, 12)}…  execution_result=${execResult}`);
+  // A write lands only when the leader executed successfully AND
+  // validators agreed. The decoded receipt carries consensus as a numeric
+  // `result` code; the raw shape carries the return value there instead,
+  // so consensus is read from the decoded transaction.
+  const decoded = await client.getTransaction({ hash: tx.hash });
+  const consensusAgreed =
+    typeof decoded.result === "number" ? CONSENSUS_AGREE_CODES.has(decoded.result) : true;
+
+  const expected =
+    execResult === "SUCCESS" && consensusAgreed
+      ? "finalized_success"
+      : "finalized_execution_failed";
+
+  const progress = await outcomeFor(decoded, tx.hash);
+  console.log(
+    `${tx.hash.slice(0, 12)}…  execution_result=${execResult}  consensus=${
+      consensusAgreed ? "agreed" : "DISAGREED"
+    }`,
+  );
   check("state", progress.state, expected);
+
+  // Regression guard: a leader-success / consensus-disagree transaction
+  // must never be reported as success. Reading only the leader receipt
+  // once caused exactly that, claiming a credential that did not exist.
+  if (execResult === "SUCCESS" && !consensusAgreed) {
+    const ok = progress.state !== "finalized_success";
+    console.log(
+      `  ${ok ? "PASS" : "FAIL"}  leader-success + consensus-disagree not reported as success`,
+    );
+    if (!ok) failures += 1;
+    const mentionsConsensus = /agreement|consensus/i.test(progress.error?.message ?? "");
+    console.log(`  ${mentionsConsensus ? "PASS" : "FAIL"}  explains consensus disagreement`);
+    if (!mentionsConsensus) failures += 1;
+    console.log();
+    continue;
+  }
 
   if (expected === "finalized_success") {
     // A successful write must surface the contract's decoded return value,

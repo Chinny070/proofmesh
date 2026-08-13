@@ -1,39 +1,104 @@
 /**
- * Transaction receipt polling and finality classification.
+ * Transaction receipt polling and outcome classification.
  *
- * Uses `client.waitForTransactionReceipt` (verified real API on
- * GenLayerClient, see node_modules/genlayer-js/dist/index-C3Ul1Rte.d.ts)
- * plus the real runtime `TransactionStatus` / `ExecutionResult` enums
- * exported from `genlayer-js/types` (verified via
- * node_modules/genlayer-js/dist/types/index.js) -- no string literal in
- * this file is guessed.
+ * A transaction hash is never treated as success. Nor is a leader's
+ * receipt: on GenLayer the leader proposes and validators vote, so a
+ * write only lands when BOTH the leader executed successfully AND
+ * consensus agreed. Reading only the leader reports state changes that
+ * never happened.
  *
- * A transaction hash is never treated as success. `finalized_success` is
- * only reached once the FINALIZED receipt's execution result confirms
- * successful contract execution.
+ * Every field read here was verified against real finalized transactions
+ * on the deployed contract rather than assumed from the SDK's types.
  */
-import { ExecutionResult, TransactionStatus } from "genlayer-js/types";
-import type {
-  GenLayerClient,
-  GenLayerTransaction,
-  TransactionHash,
+import {
+  ExecutionResult,
+  TransactionStatus,
+  transactionResultNumberToName,
 } from "genlayer-js/types";
+import type { GenLayerClient, GenLayerTransaction, TransactionHash } from "genlayer-js/types";
 import { normalizeError } from "./errors";
+import { throttled } from "./throttle";
 import type { studioNetChain } from "./chain";
 import type { TxProgress } from "./types";
 
 type Client = GenLayerClient<typeof studioNetChain>;
 
-const ACCEPT_INTERVAL_MS = 2000;
-const ACCEPT_RETRIES = 30; // ~1 minute
-const FINALITY_INTERVAL_MS = 3000;
-const FINALITY_RETRIES = 60; // ~3 minutes
+/**
+ * Polling cadence. Deliberately unhurried: StudioNet allows 30 requests
+ * per minute per client, and the SDK's default of one poll every two
+ * seconds would spend that entire budget on a single transaction.
+ */
+const POLL_INTERVAL_MS = 5_000;
+
+/** Consensus on an ordinary write settles quickly. */
+const ACCEPT_TIMEOUT_MS = 150_000;
 
 /**
- * Drives a submitted transaction through ACCEPTED -> FINALIZED, invoking
- * `onProgress` at each meaningful lifecycle step. Never resolves with a
- * "success" TxProgress unless the finalized receipt's execution result is
- * FINISHED_WITH_RETURN.
+ * Finality for the nondeterministic methods (identity evaluation,
+ * continuity, challenge adjudication) involves live web retrieval plus
+ * LLM adjudication across every validator, so it needs a long ceiling.
+ */
+const FINALITY_TIMEOUT_MS = 900_000;
+
+/**
+ * A single failed poll means nothing — the transaction is already on
+ * chain. Only sustained failure is treated as losing track of it.
+ */
+const MAX_CONSECUTIVE_POLL_ERRORS = 8;
+
+/** Consensus outcomes in which validators agreed and state was applied. */
+const CONSENSUS_AGREED = new Set(["AGREE", "MAJORITY_AGREE"]);
+
+/** Statuses meaning consensus has concluded, one way or the other. */
+const DECIDED = new Set<string>([
+  TransactionStatus.ACCEPTED,
+  TransactionStatus.FINALIZED,
+  TransactionStatus.UNDETERMINED,
+  TransactionStatus.CANCELED,
+  TransactionStatus.LEADER_TIMEOUT,
+  TransactionStatus.VALIDATORS_TIMEOUT,
+]);
+
+class PollTimeout extends Error {
+  constructor() {
+    super("timed out waiting for transaction");
+    this.name = "PollTimeout";
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function pollUntil(
+  client: Client,
+  hash: `0x${string}`,
+  isDone: (tx: GenLayerTransaction) => boolean,
+  timeoutMs: number,
+): Promise<GenLayerTransaction> {
+  const deadline = Date.now() + timeoutMs;
+  let consecutiveErrors = 0;
+
+  while (Date.now() < deadline) {
+    try {
+      const tx = await throttled(() =>
+        client.getTransaction({ hash: hash as unknown as TransactionHash }),
+      );
+      consecutiveErrors = 0;
+      if (isDone(tx)) return tx;
+    } catch (err) {
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) throw err;
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+  throw new PollTimeout();
+}
+
+const statusOf = (tx: GenLayerTransaction): string => String(tx.statusName ?? tx.status ?? "");
+
+/**
+ * Drives a submitted transaction through consensus to finality, reporting
+ * each lifecycle step. Resolves as successful only when the finalized
+ * receipt shows both validator agreement and successful execution.
  */
 export async function trackTransaction(
   client: Client,
@@ -41,110 +106,118 @@ export async function trackTransaction(
   onProgress: (progress: TxProgress) => void,
 ): Promise<TxProgress> {
   onProgress({ state: "submitted", hash });
+  onProgress({ state: "pending", hash });
 
-  let acceptedReceipt: GenLayerTransaction;
+  let decided: GenLayerTransaction;
   try {
-    onProgress({ state: "pending", hash });
-    acceptedReceipt = await client.waitForTransactionReceipt({
-      hash: hash as TransactionHash,
-      status: TransactionStatus.ACCEPTED,
-      interval: ACCEPT_INTERVAL_MS,
-      retries: ACCEPT_RETRIES,
-    });
+    decided = await pollUntil(client, hash, (tx) => DECIDED.has(statusOf(tx)), ACCEPT_TIMEOUT_MS);
   } catch (err) {
-    const error = normalizeError(err);
-    const state = error.category === "timeout" ? "timeout" : "rejected";
-    const progress: TxProgress = { state, hash, error };
-    onProgress(progress);
-    return progress;
+    return report(stillPending(hash, err), onProgress);
   }
 
-  onProgress({ state: "accepted", hash, statusName: acceptedReceipt.statusName });
+  onProgress({ state: "accepted", hash, statusName: decided.statusName });
 
-  if (acceptedReceipt.statusName === TransactionStatus.FINALIZED) {
-    return finalize(acceptedReceipt, hash, onProgress);
-  }
-
-  let finalReceipt: GenLayerTransaction;
-  try {
+  let finalTx = decided;
+  if (statusOf(decided) !== TransactionStatus.FINALIZED) {
     onProgress({ state: "awaiting_finality", hash });
-    finalReceipt = await client.waitForTransactionReceipt({
-      hash: hash as TransactionHash,
-      status: TransactionStatus.FINALIZED,
-      interval: FINALITY_INTERVAL_MS,
-      retries: FINALITY_RETRIES,
-    });
-  } catch (err) {
-    const error = normalizeError(err);
-    const state = error.category === "timeout" ? "timeout" : "rejected";
-    const progress: TxProgress = { state, hash, error };
-    onProgress(progress);
-    return progress;
+    try {
+      finalTx = await pollUntil(
+        client,
+        hash,
+        (tx) => statusOf(tx) === TransactionStatus.FINALIZED,
+        FINALITY_TIMEOUT_MS,
+      );
+    } catch (err) {
+      return report(stillPending(hash, err), onProgress);
+    }
   }
 
-  return finalize(finalReceipt, hash, onProgress);
+  return report(finalize(finalTx, hash), onProgress);
+}
+
+function report(progress: TxProgress, onProgress: (p: TxProgress) => void): TxProgress {
+  onProgress(progress);
+  return progress;
 }
 
 /**
- * Execution-outcome tokens. Two chain families report this differently:
- * the typed SDK path (non-Studio chains) sets `txExecutionResultName` to an
- * `ExecutionResult` value, while StudioNet leaves that field undefined and
- * reports `SUCCESS`/`ERROR` inside `consensus_data.leader_receipt[]`.
- * Verified against real finalized transactions on the deployed contract.
+ * Losing sight of a transaction is not the same as it failing — it is on
+ * chain and still progressing. Reporting it as "rejected" would be a
+ * false negative, so this is surfaced as a timeout with wording that
+ * steers the user to check rather than blindly retry.
  */
-const SUCCESS_TOKENS = new Set(["SUCCESS", "FINISHED_WITH_RETURN"]);
-const ERROR_TOKENS = new Set(["ERROR", "FINISHED_WITH_ERROR", "FAILURE"]);
-
-/**
- * A leader receipt's decoded `result` carries the contract outcome, and its
- * `payload` shape depends on `status`:
- *   status "return"   -> payload is { readable: <JSON-encoded return value> }
- *   status "rollback" -> payload is the plain revert message string
- */
-interface LeaderReceiptLike {
-  mode?: string;
-  execution_result?: string;
-  result?: {
-    status?: string;
-    payload?: { readable?: string } | string;
+function stillPending(hash: `0x${string}`, err: unknown): TxProgress {
+  const normalized = normalizeError(err);
+  return {
+    state: "timeout",
+    hash,
+    error: {
+      category: normalized.category === "timeout" ? "timeout" : normalized.category,
+      message:
+        "Stopped tracking this transaction before it settled. It was submitted and is " +
+        "still progressing on chain — check the explorer or reload before retrying, " +
+        "since retrying may duplicate an action that actually succeeded.",
+      cause: err,
+    },
   };
 }
 
-function leaderReceiptOf(receipt: GenLayerTransaction): LeaderReceiptLike | undefined {
-  const raw = receipt.consensus_data?.leader_receipt as unknown;
-  const list = (Array.isArray(raw) ? raw : raw ? [raw] : []) as LeaderReceiptLike[];
+interface LeaderReceiptLike {
+  mode?: string;
+  execution_result?: string;
+  result?: { status?: string; payload?: { readable?: string } | string };
+}
+
+function receiptsOf(tx: GenLayerTransaction): LeaderReceiptLike[] {
+  const raw = tx.consensus_data?.leader_receipt as unknown;
+  return (Array.isArray(raw) ? raw : raw ? [raw] : []) as LeaderReceiptLike[];
+}
+
+function leaderReceiptOf(tx: GenLayerTransaction): LeaderReceiptLike | undefined {
+  const list = receiptsOf(tx);
   return list.find((entry) => entry?.mode === "leader") ?? list[0];
 }
 
 /**
- * Whether contract execution actually succeeded. Returns `undefined` when
- * neither shape yields a determinable answer — that case is deliberately
- * never treated as success.
+ * Whether validators agreed. `result` is a numeric code decoded via the
+ * SDK's own mapping: 6 = MAJORITY_AGREE (state applied), 7 =
+ * MAJORITY_DISAGREE (state not applied, shown as "Undetermined" in the
+ * Studio explorer). Returns undefined when no code is present.
  */
-function readExecutionOutcome(receipt: GenLayerTransaction): boolean | undefined {
-  if (receipt.txExecutionResultName !== undefined) {
-    return receipt.txExecutionResultName === ExecutionResult.FINISHED_WITH_RETURN;
+function readConsensusOutcome(tx: GenLayerTransaction): { agreed?: boolean; name?: string } {
+  const raw = (tx as { result?: unknown }).result;
+  if (raw === undefined || raw === null || raw === "") return {};
+
+  const name =
+    typeof raw === "number"
+      ? (transactionResultNumberToName as Record<string, string>)[String(raw)]
+      : String(raw);
+
+  if (!name) return {};
+  return { agreed: CONSENSUS_AGREED.has(name.toUpperCase()), name };
+}
+
+/** Whether the leader's execution itself succeeded. */
+function readExecutionOutcome(tx: GenLayerTransaction): boolean | undefined {
+  if (tx.txExecutionResultName !== undefined) {
+    return tx.txExecutionResultName === ExecutionResult.FINISHED_WITH_RETURN;
   }
-  const raw = leaderReceiptOf(receipt)?.execution_result;
+  const raw = leaderReceiptOf(tx)?.execution_result;
   if (raw === undefined || raw === null) return undefined;
 
   const token = String(raw).toUpperCase();
-  if (SUCCESS_TOKENS.has(token)) return true;
-  if (ERROR_TOKENS.has(token)) return false;
+  if (token === "SUCCESS" || token === "FINISHED_WITH_RETURN") return true;
+  if (token === "ERROR" || token === "FINISHED_WITH_ERROR" || token === "FAILURE") return false;
   return undefined;
 }
 
 /**
- * The contract's decoded return value. This lives in the leader receipt's
- * decoded payload -- NOT in `receipt.data`, which carries the *input*
- * calldata (method name + arguments) and would be useless to callers.
- * `readable` is a JSON-encoded scalar, so it is parsed once to recover the
- * plain string the contract returned.
+ * The contract's decoded return value, from the leader receipt's payload —
+ * not `tx.data`, which holds the *input* calldata.
  */
-function readReturnValue(receipt: GenLayerTransaction): unknown {
-  const payload = leaderReceiptOf(receipt)?.result?.payload;
-  const readable =
-    payload && typeof payload === "object" ? payload.readable : undefined;
+function readReturnValue(tx: GenLayerTransaction): unknown {
+  const payload = leaderReceiptOf(tx)?.result?.payload;
+  const readable = payload && typeof payload === "object" ? payload.readable : undefined;
   if (typeof readable !== "string") return undefined;
   try {
     return JSON.parse(readable) as unknown;
@@ -153,58 +226,62 @@ function readReturnValue(receipt: GenLayerTransaction): unknown {
   }
 }
 
-/**
- * The contract's own revert message (e.g. "Profile ID already exists").
- *
- * On a rolled-back execution it sits in the leader receipt's decoded
- * payload. The top-level `result` field only carries it on the *raw* RPC
- * shape — once decoded it becomes a numeric result code — so the leader
- * receipt is checked first and the raw field is a fallback.
- */
-function readContractError(receipt: GenLayerTransaction): string | undefined {
-  const payload = leaderReceiptOf(receipt)?.result?.payload;
+/** The contract's own revert message, when execution rolled back. */
+function readContractError(tx: GenLayerTransaction): string | undefined {
+  const payload = leaderReceiptOf(tx)?.result?.payload;
   if (typeof payload === "string" && payload.trim()) return payload.trim();
 
-  const result = (receipt as { result?: unknown }).result;
+  const result = (tx as { result?: unknown }).result;
   if (typeof result === "string" && result.trim()) return result.trim();
   return undefined;
 }
 
-function finalize(
-  receipt: GenLayerTransaction,
-  hash: `0x${string}`,
-  onProgress: (progress: TxProgress) => void,
-): TxProgress {
-  const executedOk = readExecutionOutcome(receipt);
+function finalize(tx: GenLayerTransaction, hash: `0x${string}`): TxProgress {
+  const consensus = readConsensusOutcome(tx);
+  const executed = readExecutionOutcome(tx);
+  const base = { hash, statusName: tx.statusName };
 
-  let progress: TxProgress;
-
-  if (executedOk === true) {
-    progress = {
-      state: "finalized_success",
-      hash,
-      statusName: receipt.statusName,
-      result: readReturnValue(receipt),
-    };
-  } else {
-    const contractMessage = readContractError(receipt);
-    progress = {
+  // Validators disagreed: the leader's verdict was not adopted and no
+  // state change was written, however well the leader itself ran.
+  if (consensus.agreed === false) {
+    const disagreeing = countVotes(tx, "disagree");
+    return {
+      ...base,
       state: "finalized_execution_failed",
-      hash,
-      statusName: receipt.statusName,
       error: {
         category: "contract_revert",
         message:
-          executedOk === false
-            ? (contractMessage ??
-              "The contract rejected this transaction. Nothing was written to chain state.")
-            : "The transaction finalized, but its execution result could not be determined " +
-              "from the receipt. Check the current on-chain state before retrying — " +
-              "retrying may fail if the first attempt actually succeeded.",
+          `Validators did not reach agreement (${consensus.name}), so nothing was ` +
+          `written to chain state.` +
+          (disagreeing > 0 ? ` ${disagreeing} validator(s) disagreed.` : "") +
+          " This is consensus working as designed, not a rejection of your evidence —" +
+          " running it again may reach agreement.",
       },
     };
   }
 
-  onProgress(progress);
-  return progress;
+  if (executed === true) {
+    return { ...base, state: "finalized_success", result: readReturnValue(tx) };
+  }
+
+  const contractMessage = readContractError(tx);
+  return {
+    ...base,
+    state: "finalized_execution_failed",
+    error: {
+      category: "contract_revert",
+      message:
+        executed === false
+          ? (contractMessage ??
+            "The contract rejected this transaction. Nothing was written to chain state.")
+          : "This transaction finalized, but its outcome could not be determined from the " +
+            "receipt. Check the current on-chain state before retrying.",
+    },
+  };
+}
+
+function countVotes(tx: GenLayerTransaction, vote: string): number {
+  const votes = tx.consensus_data?.votes as Record<string, string> | undefined;
+  if (!votes) return 0;
+  return Object.values(votes).filter((v) => String(v).toLowerCase() === vote).length;
 }

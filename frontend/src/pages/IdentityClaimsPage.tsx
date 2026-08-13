@@ -178,7 +178,7 @@ export default function IdentityClaimsPage() {
                         }
                         aria-expanded={selectedClaimId === claim.claim_id}
                       >
-                        {selectedClaimId === claim.claim_id ? "Close" : "Continue"}
+                        {selectedClaimId === claim.claim_id ? "Hide details" : "Show details"}
                       </button>
                     </td>
                   </tr>
