@@ -1195,7 +1195,25 @@ Rules:
 5. evidence_refs must only cite proof_id values that appear above:
    {valid_evidence_refs_text}
 6. credential_type must be exactly one of: {allowed_credential_types}
+   Choose it by applying the FIRST rule below that matches, in this order.
+   This ordering is mandatory: independent evaluators must reach the same
+   credential_type from the same evidence, so do not substitute your own
+   judgement about which label feels most appropriate.
+   a. VERIFIED_ORG_REPRESENTATIVE -- a confirmed ORG_PAGE or TEAM_PAGE
+      claim names this wallet's holder in an organisation role, AND at
+      least one other claim is confirmed.
+   b. VERIFIED_PROJECT_FOUNDER -- a confirmed PROJECT_WEBSITE or TEAM_PAGE
+      claim identifies this wallet's holder as a founder or maintainer,
+      AND at least one other claim is confirmed.
+   c. VERIFIED_DEVELOPER -- a confirmed GITHUB_PROFILE or
+      DEVELOPER_PROFILE claim exists, AND at least one other claim of any
+      type is confirmed.
+   d. VERIFIED_COMMUNITY_MEMBER -- a confirmed COMMUNITY_PROFILE or
+      X_PROFILE claim exists, AND at least one other claim is confirmed.
+   e. BASIC_IDENTITY -- anything else, including a single confirmed claim.
 7. reason_codes must only use values from: {allowed_reason_codes}
+   Include only codes the evidence directly supports, and list them in
+   the same order they appear in that list. Do not pad the list.
 8. Keep summary under {MAX_SUMMARY_LEN} characters.
 9. Return valid JSON only. No markdown, no explanation, just the JSON object.
 
@@ -1217,13 +1235,27 @@ Return this exact JSON shape:
             result = result.replace("```json", "").replace("```", "").strip()
             return result
 
+        # Agreement is judged on the decision, not on wording. Demanding an
+        # exact reason_codes set match proved unworkable in practice: the
+        # same frozen evidence legitimately yields different subsets and
+        # orderings between runs, so validators disagreed every time and
+        # consensus never settled. The identity decision itself
+        # (eligible, credential_type, signal count) must still match --
+        # rule 6 above makes credential_type deterministic -- while
+        # descriptive fields are compared for equivalent meaning, per the
+        # spec's requirement not to use strict equality for subjective
+        # identity judgement.
         principle = (
-            "The eligible boolean, credential_type, and reason_codes must match "
-            "exactly. confidence_bps, continuity_risk_bps, conflict_risk_bps, and "
-            "manipulation_risk_bps must each be within 1000 of each other. "
-            "independent_signal_count must match exactly. evidence_refs must "
-            "reference the same evidence items. The summary must convey the same "
-            "meaning."
+            "Agreement is about the identity decision, not wording. The eligible "
+            "boolean must match exactly. credential_type must match exactly. "
+            "independent_signal_count must match exactly. confidence_bps, "
+            "continuity_risk_bps, conflict_risk_bps, and manipulation_risk_bps "
+            "must each be within 2000 of each other. reason_codes must convey the "
+            "same overall classification: an exact set match is NOT required, and "
+            "differing counts or ordering are acceptable so long as neither set "
+            "contradicts the other (for example one asserting confirmation where "
+            "the other asserts a failure). evidence_refs must reference the same "
+            "evidence items. The summary must convey the same meaning."
         )
 
         raw_result = gl.eq_principle.prompt_comparative(leader, principle)
