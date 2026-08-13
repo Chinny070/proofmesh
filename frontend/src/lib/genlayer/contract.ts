@@ -13,6 +13,7 @@ import type { CalldataEncodable } from "genlayer-js/types";
 import { PROOFMESH_CONTRACT_ADDRESS } from "./chain";
 import { getReadClient, getWriteClient } from "./client";
 import { normalizeError } from "./errors";
+import { throttled } from "./throttle";
 import type { NormalizedError } from "./types";
 
 export class ContractCallError extends Error {
@@ -29,12 +30,15 @@ async function readMethod(
   args: CalldataEncodable[] = [],
 ): Promise<string> {
   try {
-    const client = getReadClient();
-    const result = await client.readContract({
-      address: PROOFMESH_CONTRACT_ADDRESS,
-      functionName,
-      args,
-    });
+    // Funnelled through the shared limiter: StudioNet caps clients at 30
+    // requests/minute, and this app's page-level fan-out can exceed that.
+    const result = await throttled(() =>
+      getReadClient().readContract({
+        address: PROOFMESH_CONTRACT_ADDRESS,
+        functionName,
+        args,
+      }),
+    );
     return result as string;
   } catch (err) {
     throw new ContractCallError(normalizeError(err));

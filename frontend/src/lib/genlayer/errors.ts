@@ -52,6 +52,14 @@ export function normalizeError(err: unknown): NormalizedError {
     return { category: "wrong_network", message, cause: err };
   }
 
+  if (/rate limit/i.test(raw)) {
+    return {
+      category: "rate_limited",
+      message: "Too many requests to the network right now. Retrying shortly…",
+      cause: err,
+    };
+  }
+
   if (/timed out waiting for transaction/i.test(raw)) {
     return { category: "timeout", message, cause: err };
   }
@@ -116,10 +124,20 @@ export function isContractRevert(error: unknown): boolean {
  * deterministic — retrying re-runs the same rejection — so only transport
  * failures are retried.
  */
+/** Whether a failure was the network rejecting us for request volume. */
+export function isRateLimited(error: unknown): boolean {
+  const normalized = (error as { normalized?: NormalizedError } | null)?.normalized;
+  return normalized?.category === "rate_limited";
+}
+
 export function isRetryableError(error: unknown): boolean {
   const normalized = (error as { normalized?: NormalizedError } | null)?.normalized;
   if (!normalized) return true; // unclassified: assume transport, allow a retry
-  return normalized.category === "network_error" || normalized.category === "timeout";
+  return (
+    normalized.category === "network_error" ||
+    normalized.category === "rate_limited" ||
+    normalized.category === "timeout"
+  );
 }
 
 export class WalletNotFoundError extends Error {

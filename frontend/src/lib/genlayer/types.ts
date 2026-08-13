@@ -42,6 +42,7 @@ export interface NormalizedError {
     | "wallet_rejected"
     | "wrong_network"
     | "network_error"
+    | "rate_limited"
     | "contract_revert"
     | "timeout"
     | "unknown";

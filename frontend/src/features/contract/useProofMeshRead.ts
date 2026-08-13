@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { isRetryableError, reads } from "../../lib/genlayer";
+import { isRateLimited, isRetryableError, reads } from "../../lib/genlayer";
 import type {
   ContinuityRecord,
   CredentialRecord,
@@ -23,7 +23,13 @@ function parse<T>(raw: string): T {
   return JSON.parse(raw) as T;
 }
 
-const STALE_TIME = 10_000;
+/**
+ * Cached long enough that navigating between pages reuses data instead of
+ * re-spending the 30-requests-per-minute StudioNet budget. Writes
+ * explicitly invalidate these keys on finality, so fresh data still
+ * appears immediately after a user action.
+ */
+const STALE_TIME = 60_000;
 
 /**
  * Retry policy for contract reads. A contract revert (e.g. the record
@@ -32,7 +38,16 @@ const STALE_TIME = 10_000;
  * renders as "record not found" — which would read like data loss.
  */
 const retry = (failureCount: number, error: Error) =>
-  failureCount < 2 && isRetryableError(error);
+  failureCount < 3 && isRetryableError(error);
+
+/**
+ * Backs off hard on rate limiting — retrying a throttled request too soon
+ * just consumes more of the same budget.
+ */
+const retryDelay = (attempt: number, error: Error) =>
+  isRateLimited(error)
+    ? Math.min(15_000, 3_000 * 2 ** attempt)
+    : Math.min(5_000, 500 * 2 ** attempt);
 
 export function useProtocolStatus() {
   return useQuery({
@@ -57,6 +72,7 @@ export function useProfile(profileId: string | undefined) {
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -68,6 +84,7 @@ export function useIdentityStatus(profileId: string | undefined) {
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -78,6 +95,7 @@ export function useProfileClaimIds(profileId: string | undefined) {
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -89,6 +107,8 @@ export function useProfileClaims(profileId: string | undefined) {
       queryKey: ["proofmesh", "claim", claimId],
       queryFn: async () => parse<IdentityClaim>(await reads.getIdentityClaim(claimId)),
       staleTime: STALE_TIME,
+      retry,
+      retryDelay,
     })),
   });
 
@@ -108,6 +128,7 @@ export function useClaim(claimId: string | undefined) {
     enabled: Boolean(claimId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -118,6 +139,7 @@ export function useClaimProofIds(claimId: string | undefined) {
     enabled: Boolean(claimId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -128,6 +150,7 @@ export function useProof(proofId: string | undefined) {
     enabled: Boolean(proofId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -146,6 +169,7 @@ export function useCredential(credentialId: string | undefined) {
     enabled: Boolean(credentialId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -156,6 +180,7 @@ export function useProfileCredentialIds(profileId: string | undefined) {
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -167,6 +192,8 @@ export function useProfileCredentials(profileId: string | undefined) {
       queryKey: ["proofmesh", "credential", credentialId],
       queryFn: async () => parse<CredentialRecord>(await reads.getCredential(credentialId)),
       staleTime: STALE_TIME,
+      retry,
+      retryDelay,
     })),
   });
 
@@ -186,6 +213,7 @@ export function useContinuityStatus(profileId: string | undefined) {
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -196,6 +224,7 @@ export function useCredentialContinuityIds(credentialId: string | undefined) {
     enabled: Boolean(credentialId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -207,6 +236,8 @@ export function useContinuityRecords(credentialId: string | undefined) {
       queryFn: async () =>
         parse<ContinuityRecord>(await reads.getContinuityRecord(continuityId)),
       staleTime: STALE_TIME,
+      retry,
+      retryDelay,
     })),
   });
 
@@ -226,6 +257,7 @@ export function useCredentialChallengeIds(credentialId: string | undefined) {
     enabled: Boolean(credentialId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -237,6 +269,7 @@ export function useIdentityChallenge(challengeId: string | undefined) {
     enabled: Boolean(challengeId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -251,6 +284,8 @@ export function useAllChallenges() {
       queryKey: ["proofmesh", "credentialChallengeIds", credential.id],
       queryFn: async () => parse<string[]>(await reads.getCredentialChallengeIds(credential.id)),
       staleTime: STALE_TIME,
+      retry,
+      retryDelay,
     })),
   });
 
@@ -261,6 +296,8 @@ export function useAllChallenges() {
       queryFn: async () =>
         parse<IdentityChallengeRecord>(await reads.getIdentityChallenge(challengeId)),
       staleTime: STALE_TIME,
+      retry,
+      retryDelay,
     })),
   });
 
@@ -295,6 +332,7 @@ export function useTrustPolicy(policyId: string | undefined) {
     enabled: Boolean(policyId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -305,6 +343,7 @@ export function useTrustPolicyVersions(name: string | undefined) {
     enabled: Boolean(name),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
 
@@ -326,5 +365,6 @@ export function usePolicyEvaluation(
     enabled: Boolean(profileId && policyId && credentialId),
     staleTime: STALE_TIME,
     retry,
+    retryDelay,
   });
 }
