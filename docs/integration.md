@@ -4,7 +4,7 @@ ProofMesh is infrastructure. Another GenLayer application uses it by reading the
 
 | | |
 |---|---|
-| **Contract** | `0xfC0504f92783F1418e333AECb6CB587E24979e2a` |
+| **Contract** | `0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` |
 | **Network** | GenLayer StudioNet |
 | **Chain ID** | `61999` |
 | **RPC** | `https://studio.genlayer.com/api` |
@@ -26,7 +26,7 @@ import { studionet } from "genlayer-js/chains";
 const client = createClient({ chain: studionet });
 
 const raw = await client.readContract({
-  address: "0xfC0504f92783F1418e333AECb6CB587E24979e2a",
+  address: "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2",
   functionName: "evaluate_policy_view",
   args: [profileId, policyId, credentialId],
 });
@@ -241,7 +241,7 @@ ProofMesh's own frontend models this as an explicit 12-state machine (`idle → 
 ProofMesh's frontend isolates every raw `genlayer-js` call behind a typed adapter so page code never touches the SDK. The same shape works in a consuming app:
 
 ```ts
-const CONTRACT = "0xfC0504f92783F1418e333AECb6CB587E24979e2a";
+const CONTRACT = "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2";
 
 async function read(functionName: string, args: CalldataEncodable[] = []) {
   const client = getReadClient();          // no wallet needed

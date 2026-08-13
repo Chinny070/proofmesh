@@ -6,7 +6,7 @@ Studio (not via CLI).
 
 | Setting | Value |
 |---|---|
-| Contract address | `0xfC0504f92783F1418e333AECb6CB587E24979e2a` |
+| Contract address | `0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` |
 | Network | GenLayer StudioNet |
 | Chain ID | `61999` |
 | RPC | `https://studio.genlayer.com/api` |
@@ -73,7 +73,7 @@ and [docs/deployed-schema.json](deployed-schema.json).
 ## Post-deployment verification result
 
 Performed against the live deployed contract at
-`0xfC0504f92783F1418e333AECb6CB587E24979e2a` on StudioNet, via
+`0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` on StudioNet, via
 `genlayer_py`'s `get_contract_schema` and `read_contract` (read-only calls
 only — no write, no redeployment).
 
@@ -168,7 +168,7 @@ Set in the Vercel project for Production, Preview, and Development:
 ```
 VITE_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 VITE_GENLAYER_CHAIN_ID=61999
-VITE_PROOFMESH_CONTRACT_ADDRESS=0xfC0504f92783F1418e333AECb6CB587E24979e2a
+VITE_PROOFMESH_CONTRACT_ADDRESS=0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2
 ```
 
 None of these are secrets — they are a public RPC endpoint, a public chain
@@ -196,7 +196,7 @@ In-browser against the production origin: every route rendered its expected
 heading, zero console errors, the page issued a live request to
 `https://studio.genlayer.com/api`, protocol counters loaded from chain
 state, and the only contract address rendered anywhere was
-`0xfC0504f92783F1418e333AECb6CB587E24979e2a`.
+`0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2`.
 
 ## Browser-wallet verification checklist
 

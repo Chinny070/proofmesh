@@ -1,17 +1,16 @@
 {
-  "chain_id": 61999,
-  "contract_address": "0xfC0504f92783F1418e333AECb6CB587E24979e2a",
+  "contract_address": "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2",
   "network": "GenLayer StudioNet",
-  "retrieved_via": "genlayer_py.get_contract_schema (client.get_contract_schema)",
+  "chain_id": 61999,
   "rpc": "https://studio.genlayer.com/api",
+  "retrieved_via": "genlayer-js getContractSchema",
   "schema": {
     "ctor": {
-      "kwparams": {},
-      "params": []
+      "params": [],
+      "kwparams": {}
     },
     "methods": {
       "add_identity_claim": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
@@ -30,24 +29,24 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "create_identity_profile": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "create_trust_policy": {
-        "kwparams": {},
         "params": [
           [
             "name",
@@ -82,24 +81,24 @@
             ]
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "evaluate_continuity": {
-        "kwparams": {},
         "params": [
           [
             "continuity_id",
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "evaluate_identity": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
@@ -110,24 +109,24 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "evaluate_identity_challenge": {
-        "kwparams": {},
         "params": [
           [
             "challenge_id",
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "evaluate_policy_view": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
@@ -142,206 +141,206 @@
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "freeze_identity_challenge": {
-        "kwparams": {},
         "params": [
           [
             "challenge_id",
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "freeze_identity_evaluation": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "get_claim_proof_ids": {
-        "kwparams": {},
         "params": [
           [
             "claim_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_continuity_record": {
-        "kwparams": {},
         "params": [
           [
             "continuity_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_continuity_status": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_credential": {
-        "kwparams": {},
         "params": [
           [
             "credential_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_credential_challenge_ids": {
-        "kwparams": {},
         "params": [
           [
             "credential_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_credential_continuity_ids": {
-        "kwparams": {},
         "params": [
           [
             "credential_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_identity_challenge": {
-        "kwparams": {},
         "params": [
           [
             "challenge_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_identity_claim": {
-        "kwparams": {},
         "params": [
           [
             "claim_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_identity_profile": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_identity_proof": {
-        "kwparams": {},
         "params": [
           [
             "proof_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_identity_status": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_profile_claim_ids": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_profile_credential_ids": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_protocol_status": {
-        "kwparams": {},
         "params": [],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_trust_policy": {
-        "kwparams": {},
         "params": [
           [
             "policy_id",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "get_trust_policy_versions": {
-        "kwparams": {},
         "params": [
           [
             "name",
             "string"
           ]
         ],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "issue_verification_challenge": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
@@ -352,30 +351,30 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "list_credentials": {
-        "kwparams": {},
         "params": [],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "list_profiles": {
-        "kwparams": {},
         "params": [],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "list_trust_policies": {
-        "kwparams": {},
         "params": [],
+        "kwparams": {},
         "readonly": true,
         "ret": "string"
       },
       "open_identity_challenge": {
-        "kwparams": {},
         "params": [
           [
             "credential_id",
@@ -394,12 +393,12 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "request_continuity_check": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
@@ -410,12 +409,12 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "submit_challenge_evidence": {
-        "kwparams": {},
         "params": [
           [
             "challenge_id",
@@ -426,12 +425,12 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       },
       "submit_identity_proof": {
-        "kwparams": {},
         "params": [
           [
             "profile_id",
@@ -462,9 +461,10 @@
             "string"
           ]
         ],
-        "payable": false,
+        "kwparams": {},
         "readonly": false,
-        "ret": "string"
+        "ret": "string",
+        "payable": false
       }
     }
   }

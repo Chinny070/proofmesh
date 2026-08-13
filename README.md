@@ -8,7 +8,7 @@ ProofMesh is a reusable digital identity and trust-attestation protocol built on
 |---|---|
 | **Live app** | https://proofmesh.vercel.app |
 | **Source** | https://github.com/Chinny070/proofmesh |
-| **Contract** | `0xfC0504f92783F1418e333AECb6CB587E24979e2a` |
+| **Contract** | `0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` |
 | **Network** | GenLayer StudioNet |
 | **Chain ID** | `61999` |
 | **RPC** | `https://studio.genlayer.com/api` |
@@ -94,7 +94,7 @@ import { studionet } from "genlayer-js/chains";
 const client = createClient({ chain: studionet });
 
 const raw = await client.readContract({
-  address: "0xfC0504f92783F1418e333AECb6CB587E24979e2a",
+  address: "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2",
   functionName: "evaluate_policy_view",
   args: [profileId, policyId, credentialId],
 });
@@ -148,7 +148,7 @@ The `.env.example` already points at the live deployed contract, so reads work i
 ```
 VITE_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 VITE_GENLAYER_CHAIN_ID=61999
-VITE_PROOFMESH_CONTRACT_ADDRESS=0xfC0504f92783F1418e333AECb6CB587E24979e2a
+VITE_PROOFMESH_CONTRACT_ADDRESS=0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2
 ```
 
 Other commands:

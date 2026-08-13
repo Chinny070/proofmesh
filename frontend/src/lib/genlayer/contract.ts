@@ -4,7 +4,7 @@
  * Every method name, parameter name, and parameter order below is taken
  * directly from the live deployed schema (docs/deployed-schema.json,
  * fetched from the contract itself at
- * 0xfC0504f92783F1418e333AECb6CB587E24979e2a on StudioNet) -- not from
+ * 0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2 on StudioNet) -- not from
  * memory of the Python source. Page components must never call
  * genlayer-js's `readContract`/`writeContract` directly; they call the
  * functions in this file instead.
