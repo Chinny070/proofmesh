@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { isContractRevert } from "../lib/genlayer/errors";
 import { bpsToPercent } from "../types/proofmesh";
 
 /** Status pill. `status` drives the colour via the `.st-*` classes. */
@@ -62,26 +63,47 @@ export function RecordNotFound({
 }) {
   const detail =
     error instanceof Error ? error.message : error ? String(error) : null;
+
+  // Only a contract revert means the record genuinely isn't there. Anything
+  // else is a failure to reach the chain, and must not be worded as though
+  // the user's data is gone.
+  const missing = !error || isContractRevert(error);
+
   return (
     <div className="empty-state">
-      <h3>{kind} not found</h3>
-      <p>
-        No {kind.toLowerCase()} with the ID {id ? <code>{id}</code> : "given"} exists on this
-        ProofMesh deployment. It may have never been created, or the link may be wrong.
-      </p>
+      <h3>{missing ? `${kind} not found` : `Couldn’t load this ${kind.toLowerCase()}`}</h3>
+      {missing ? (
+        <p>
+          No {kind.toLowerCase()} with the ID {id ? <code>{id}</code> : "given"} exists on this
+          ProofMesh deployment. It may have never been created, or the link may be wrong.
+        </p>
+      ) : (
+        <p>
+          ProofMesh couldn’t reach the contract to load{" "}
+          {id ? <code>{id}</code> : `this ${kind.toLowerCase()}`}. This is a connection problem,
+          not missing data — nothing has been lost. Try again in a moment.
+        </p>
+      )}
       {detail && (
         <details style={{ maxWidth: "34rem", margin: "0 auto 1rem", textAlign: "left" }}>
           <summary className="small faint" style={{ cursor: "pointer" }}>
-            Contract response
+            {missing ? "Contract response" : "Error detail"}
           </summary>
           <p className="small faint" style={{ marginTop: "0.5rem" }}>
             {detail}
           </p>
         </details>
       )}
-      <Link className="btn btn-primary" to={backTo}>
-        {backLabel}
-      </Link>
+      <div className="row" style={{ justifyContent: "center" }}>
+        {!missing && (
+          <button type="button" className="btn btn-primary" onClick={() => location.reload()}>
+            Retry
+          </button>
+        )}
+        <Link className={missing ? "btn btn-primary" : "btn"} to={backTo}>
+          {backLabel}
+        </Link>
+      </div>
     </div>
   );
 }

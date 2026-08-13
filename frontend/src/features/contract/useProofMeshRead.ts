@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { reads } from "../../lib/genlayer";
+import { isRetryableError, reads } from "../../lib/genlayer";
 import type {
   ContinuityRecord,
   CredentialRecord,
@@ -25,6 +25,15 @@ function parse<T>(raw: string): T {
 
 const STALE_TIME = 10_000;
 
+/**
+ * Retry policy for contract reads. A contract revert (e.g. the record
+ * genuinely does not exist) is deterministic and is surfaced immediately.
+ * A transport failure gets two retries, so a single RPC blip never
+ * renders as "record not found" — which would read like data loss.
+ */
+const retry = (failureCount: number, error: Error) =>
+  failureCount < 2 && isRetryableError(error);
+
 export function useProtocolStatus() {
   return useQuery({
     queryKey: ["proofmesh", "protocolStatus"],
@@ -47,7 +56,7 @@ export function useProfile(profileId: string | undefined) {
     queryFn: async () => parse<IdentityProfile>(await reads.getIdentityProfile(profileId!)),
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -58,7 +67,7 @@ export function useIdentityStatus(profileId: string | undefined) {
       parse<IdentityStatusSummary>(await reads.getIdentityStatus(profileId!)),
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -68,7 +77,7 @@ export function useProfileClaimIds(profileId: string | undefined) {
     queryFn: async () => parse<string[]>(await reads.getProfileClaimIds(profileId!)),
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -98,7 +107,7 @@ export function useClaim(claimId: string | undefined) {
     queryFn: async () => parse<IdentityClaim>(await reads.getIdentityClaim(claimId!)),
     enabled: Boolean(claimId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -108,7 +117,7 @@ export function useClaimProofIds(claimId: string | undefined) {
     queryFn: async () => parse<string[]>(await reads.getClaimProofIds(claimId!)),
     enabled: Boolean(claimId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -118,7 +127,7 @@ export function useProof(proofId: string | undefined) {
     queryFn: async () => parse<ProofRecord>(await reads.getIdentityProof(proofId!)),
     enabled: Boolean(proofId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -136,7 +145,7 @@ export function useCredential(credentialId: string | undefined) {
     queryFn: async () => parse<CredentialRecord>(await reads.getCredential(credentialId!)),
     enabled: Boolean(credentialId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -146,7 +155,7 @@ export function useProfileCredentialIds(profileId: string | undefined) {
     queryFn: async () => parse<string[]>(await reads.getProfileCredentialIds(profileId!)),
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -176,7 +185,7 @@ export function useContinuityStatus(profileId: string | undefined) {
     queryFn: async () => parse<string>(await reads.getContinuityStatus(profileId!)),
     enabled: Boolean(profileId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -186,7 +195,7 @@ export function useCredentialContinuityIds(credentialId: string | undefined) {
     queryFn: async () => parse<string[]>(await reads.getCredentialContinuityIds(credentialId!)),
     enabled: Boolean(credentialId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -216,7 +225,7 @@ export function useCredentialChallengeIds(credentialId: string | undefined) {
     queryFn: async () => parse<string[]>(await reads.getCredentialChallengeIds(credentialId!)),
     enabled: Boolean(credentialId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -227,7 +236,7 @@ export function useIdentityChallenge(challengeId: string | undefined) {
       parse<IdentityChallengeRecord>(await reads.getIdentityChallenge(challengeId!)),
     enabled: Boolean(challengeId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -285,7 +294,7 @@ export function useTrustPolicy(policyId: string | undefined) {
     queryFn: async () => parse<TrustPolicyRecord>(await reads.getTrustPolicy(policyId!)),
     enabled: Boolean(policyId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -295,7 +304,7 @@ export function useTrustPolicyVersions(name: string | undefined) {
     queryFn: async () => parse<string[]>(await reads.getTrustPolicyVersions(name!)),
     enabled: Boolean(name),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }
 
@@ -316,6 +325,6 @@ export function usePolicyEvaluation(
       ),
     enabled: Boolean(profileId && policyId && credentialId),
     staleTime: STALE_TIME,
-    retry: false,
+    retry,
   });
 }

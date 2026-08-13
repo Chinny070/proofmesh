@@ -98,6 +98,30 @@ function extractContractMessage(raw: string): string | null {
   return null;
 }
 
+/**
+ * Whether an error means "the contract rejected this call" (the record
+ * genuinely does not exist / the arguments were invalid) as opposed to a
+ * transport failure.
+ *
+ * This distinction matters: a transient RPC blip must not be presented to
+ * the user as "record not found", which reads like data loss.
+ */
+export function isContractRevert(error: unknown): boolean {
+  const normalized = (error as { normalized?: NormalizedError } | null)?.normalized;
+  return normalized?.category === "contract_revert";
+}
+
+/**
+ * Whether a failed read is worth retrying. Contract reverts are
+ * deterministic — retrying re-runs the same rejection — so only transport
+ * failures are retried.
+ */
+export function isRetryableError(error: unknown): boolean {
+  const normalized = (error as { normalized?: NormalizedError } | null)?.normalized;
+  if (!normalized) return true; // unclassified: assume transport, allow a retry
+  return normalized.category === "network_error" || normalized.category === "timeout";
+}
+
 export class WalletNotFoundError extends Error {
   constructor(message = "No injected wallet was found in this browser.") {
     super(message);
