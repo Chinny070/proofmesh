@@ -198,8 +198,12 @@ still contains attacker-influenced text, and no prompt-level defence is
 absolute. The security argument rests on the deterministic validator, not on
 the model behaving.
 
-**Write paths are unexercised against a live wallet.** All 13 write methods
-are covered by 127 direct contract tests, but no write transaction has been
-sent to the deployed contract from a real browser wallet — the development
-environment has no injected wallet. See
+**Two write paths remain unexercised against live validators.** The core
+lifecycle has been run end-to-end from a real browser wallet against the
+deployed contract, every transaction reaching consensus. Continuity checks
+and conflicting-claim adjudication are covered by the 127 direct tests but
+have not run on-chain: continuity is gated behind a 30-day recheck interval,
+and a dispute requires a second wallet with a competing profile. Their
+nondeterministic adjudication therefore has no live-consensus evidence
+behind it. See
 [docs/deployment.md](deployment.md#browser-wallet-verification-checklist).

@@ -191,7 +191,7 @@ These are real constraints, not disclaimers:
 - **Platform access varies.** Rate limits, login walls, geographic differences, and bot protection can all affect what validators can retrieve.
 - **Credentials go stale and can be contested.** A credential is a point-in-time judgement with an expiry. Consumers should check status and expiry, not just existence.
 - **Independence assessment is bounded.** ProofMesh will report that claims show low independence confidence. It will never assert that two wallets are the same person.
-- **Write paths have not been exercised end-to-end.** All 13 write methods are implemented, type-checked, and covered by 127 direct contract tests, but no write transaction has been sent to the deployed contract from a real browser wallet — the development environment has no injected wallet. See [docs/deployment.md](docs/deployment.md#browser-wallet-verification-checklist) for the manual checklist.
+- **Continuity and dispute resolution have not run on-chain.** The core lifecycle — profile, claims, challenges, proofs, freeze, evaluation, credential issuance, and trust-policy evaluation — has been exercised end-to-end against the deployed contract from a real browser wallet, with every transaction reaching validator consensus. Continuity checks and conflicting-claim adjudication are implemented and covered by the 127 direct tests, but neither has been run against live validators: continuity is gated behind a 30-day recheck interval, and a dispute requires a second wallet. See [docs/deployment.md](docs/deployment.md#browser-wallet-verification-checklist).
 
 ## Documentation
 

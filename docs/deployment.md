@@ -102,11 +102,10 @@ only — no write, no redeployment).
    list_trust_policies() -> []
    ```
 
-3. **Not yet performed**: the `get_identity_profile("does-not-exist")`
-   on-chain-revert check and the full first-write flow (steps 4-5 of the
-   original checklist below) — no write transaction has been sent to this
-   contract yet. That's the next verification step once you're ready to
-   spend a transaction against it.
+3. **Write flow**: subsequently completed end-to-end against this
+   contract — see the
+   [browser-wallet verification checklist](#browser-wallet-verification-checklist)
+   below for what was run and what remains unexercised.
 
 ## Exact read methods to test on a fresh contract
 
@@ -200,16 +199,29 @@ state, and the only contract address rendered anywhere was
 
 ## Browser-wallet verification checklist
 
-**Status: not yet performed.** No write transaction has been sent to the
-deployed contract. The development environment has no injected browser
-wallet, so every write path below is implemented and type-checked but
-unexercised against a live wallet. These steps must be run manually in a
-browser with a GenLayer-compatible wallet before the app is considered
-release-verified.
+**Status: completed against the deployed contract on 13 August 2026.**
+Steps 1-11 were run manually from a browser with a GenLayer-compatible
+wallet, using real public identity sources (`github.com/Chinny070` and
+`x.com/Nnenne070`). Every transaction reached validator consensus
+(`Accepted`), and the run produced credential `cred-9b1a00510153fc79`:
+`VERIFIED_DEVELOPER`, `ACTIVE`, 9100 bps confidence, 2 independent
+signals, citing `proof-1` and `proof-2`.
 
-Run the frontend (`cd frontend && npm run dev`), then work through this in
-order. Each step must reach **finalized success** — a transaction hash is
-not success.
+Trust-policy evaluation was also exercised: the credential satisfies a
+policy requiring 8000 bps and 2 signals, and correctly fails a stricter
+policy requiring 9500 bps and 3 signals, returning both
+`CONFIDENCE_BELOW_MINIMUM` and `INSUFFICIENT_INDEPENDENT_SIGNALS` rather
+than short-circuiting on the first failure.
+
+**Still unexercised on-chain:** continuity checks and conflicting-claim
+adjudication. Continuity is gated behind the 30-day recheck interval, and
+a dispute requires a second wallet holding a competing profile. Both are
+implemented and covered by the direct tests, but neither has run against
+live validators.
+
+The checklist is retained below for re-verification after any redeploy.
+Each step must reach **finalized success** — a transaction hash is not
+success, and neither is a leader receipt without validator agreement.
 
 | # | Step | Where | Expected result |
 |---|---|---|---|
@@ -232,6 +244,7 @@ Additional paths worth exercising once the above passes:
 - **Trust policy** (`/policies`) — create a policy, then evaluate a real credential against it and confirm `failure_reasons` are accurate.
 
 **Do not record any of these as verified until they have actually been run.**
+The continuity and dispute rows above remain in that category.
 
 ## Stage 8 audit summary
 
