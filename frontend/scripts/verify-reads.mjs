@@ -10,7 +10,7 @@
 import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
-const CONTRACT = "0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D";
+const CONTRACT = "0x9e83f679E1e8A6a0Ed59050F4eA274d8A25B5d33";
 
 const client = createClient({ chain: studionet });
 

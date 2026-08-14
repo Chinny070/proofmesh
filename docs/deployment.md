@@ -6,7 +6,7 @@ Studio (not via CLI).
 
 | Setting | Value |
 |---|---|
-| Contract address | `0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D` |
+| Contract address | `0x9e83f679E1e8A6a0Ed59050F4eA274d8A25B5d33` |
 | Network | GenLayer StudioNet |
 | Chain ID | `61999` |
 | RPC | `https://studio.genlayer.com/api` |
@@ -73,7 +73,7 @@ and [docs/deployed-schema.json](deployed-schema.json).
 ## Post-deployment verification result
 
 Performed against the live deployed contract at
-`0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D` on StudioNet, via
+`0x9e83f679E1e8A6a0Ed59050F4eA274d8A25B5d33` on StudioNet, via
 `genlayer_py`'s `get_contract_schema` and `read_contract` (read-only calls
 only — no write, no redeployment).
 
@@ -166,7 +166,7 @@ Set in the Vercel project for Production, Preview, and Development:
 ```
 VITE_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 VITE_GENLAYER_CHAIN_ID=61999
-VITE_PROOFMESH_CONTRACT_ADDRESS=0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D
+VITE_PROOFMESH_CONTRACT_ADDRESS=0x9e83f679E1e8A6a0Ed59050F4eA274d8A25B5d33
 ```
 
 None of these are secrets — they are a public RPC endpoint, a public chain
@@ -193,7 +193,7 @@ client-side navigation) and returned HTTP 200 with the SPA root element:
 Verified on 14 August 2026 after the corrected-address Vercel deployment:
 all nine routes below rendered their expected page heading on direct
 navigation, the browser console contained no errors, `/protocol` displayed
-only `0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D`, and its live StudioNet
+only `0x9e83f679E1e8A6a0Ed59050F4eA274d8A25B5d33`, and its live StudioNet
 state showed zero profiles, claims, proofs, credentials, continuity checks,
 and disputes, matching the four direct RPC read checks.
 
