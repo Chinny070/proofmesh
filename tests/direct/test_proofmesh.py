@@ -723,7 +723,16 @@ class TestIdentityEvaluationParsing:
         assert result["reason_codes"] == ["INSUFFICIENT_EVIDENCE"]
 
         profile = json.loads(contract.get_identity_profile("profile-1"))
-        assert profile["status"] == "EVALUATION_REJECTED"
+        claim = json.loads(contract.get_identity_claim("claim-1"))
+        proof = json.loads(contract.get_identity_proof("proof-1"))
+        assert profile["status"] == "ACTIVE"
+        assert profile["continuity_status"] == "REVERIFICATION_REQUIRED"
+        assert claim["status"] == "PENDING"
+        assert claim["challenge_nonce"] == ""
+        assert proof["status"] == "HISTORICAL"
+        assert contract.issue_verification_challenge("profile-1", "claim-1").startswith(
+            "PROOFMESH|PROFILE:profile-1|CLAIM:claim-1"
+        )
 
     def test_malformed_json_rejected(self, direct_deploy, direct_vm, direct_alice):
         contract = _ready_for_evaluation(direct_deploy, direct_vm, direct_alice)
@@ -1595,7 +1604,7 @@ class TestConflicts:
         claim = json.loads(contract.get_identity_claim("claim-1"))
         historical_proof = json.loads(contract.get_identity_proof("proof-1"))
         assert profile["status"] == "ACTIVE"
-        assert profile["continuity_status"] == "RECHECK_DUE"
+        assert profile["continuity_status"] == "REVERIFICATION_REQUIRED"
         assert claim["status"] == "PENDING"
         assert claim["challenge_nonce"] == ""
         assert historical_proof["status"] == "HISTORICAL"

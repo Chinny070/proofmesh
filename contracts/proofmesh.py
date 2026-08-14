@@ -1,4 +1,4 @@
-# v0.2.17
+# v0.2.18
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
@@ -1180,6 +1180,29 @@ class ProofMesh(gl.Contract):
             package.append({"claim": claim, "proofs": proofs})
         return package
 
+    def _reopen_profile_for_reverification(
+        self, profile_id: str, profile: dict, now_iso: str
+    ) -> None:
+        """Preserve a completed evidence cycle as history, then reopen the
+        profile for fresh wallet-bound challenges. Old proofs can still be
+        queried but cannot enter the next frozen evaluation package."""
+        profile["status"] = "ACTIVE"
+        profile["continuity_status"] = "REVERIFICATION_REQUIRED"
+        profile["updated_at"] = now_iso
+        for claim_id in json.loads(self.profile_claims.get(profile_id, "[]")):
+            claim = json.loads(self.claims[claim_id])
+            if claim["status"] == "FROZEN":
+                claim["status"] = "PENDING"
+                claim["challenge_nonce"] = ""
+                claim["challenge_expires_at"] = ""
+                self.claims[claim_id] = json.dumps(claim)
+                for proof_id in json.loads(self.claim_proofs.get(claim_id, "[]")):
+                    proof = json.loads(self.proofs[proof_id])
+                    if proof["status"] == "FROZEN":
+                        proof["status"] = "HISTORICAL"
+                        self.proofs[proof_id] = json.dumps(proof)
+        self.profiles[profile_id] = json.dumps(profile)
+
     @gl.public.write
     def evaluate_identity(self, profile_id: str, policy_id: str) -> str:
         if profile_id not in self.profiles:
@@ -1391,9 +1414,7 @@ Return this exact JSON shape:
         now_iso = now.isoformat()
 
         if not verdict["eligible"]:
-            profile["status"] = "EVALUATION_REJECTED"
-            profile["updated_at"] = now_iso
-            self.profiles[profile_id] = json.dumps(profile)
+            self._reopen_profile_for_reverification(profile_id, profile, now_iso)
             return json.dumps(verdict)
 
         seed = f"{profile_id}|{policy_id}|{verdict['credential_type']}|{now_iso}"
@@ -2030,30 +2051,10 @@ Return this exact JSON shape:
         elif decision == "REQUIRE_REVERIFICATION":
             credential["status"] = "RECHECK_DUE"
             self.credentials[credential_id] = json.dumps(credential)
-            # Re-open the historical controller's claims for a fresh,
-            # wallet-bound challenge cycle. Existing credentials and proofs
-            # remain stored as immutable history; only claim lifecycle state
-            # is reset so new evidence can be submitted and frozen.
             reverification_profile = json.loads(self.profiles[historical_profile_id])
-            reverification_profile["status"] = "ACTIVE"
-            reverification_profile["continuity_status"] = "RECHECK_DUE"
-            for claim_id in json.loads(
-                self.profile_claims.get(historical_profile_id, "[]")
-            ):
-                claim = json.loads(self.claims[claim_id])
-                if claim["status"] == "FROZEN":
-                    claim["status"] = "PENDING"
-                    claim["challenge_nonce"] = ""
-                    claim["challenge_expires_at"] = ""
-                    self.claims[claim_id] = json.dumps(claim)
-                    for proof_id in json.loads(
-                        self.claim_proofs.get(claim_id, "[]")
-                    ):
-                        proof = json.loads(self.proofs[proof_id])
-                        if proof["status"] == "FROZEN":
-                            proof["status"] = "HISTORICAL"
-                            self.proofs[proof_id] = json.dumps(proof)
-            self.profiles[historical_profile_id] = json.dumps(reverification_profile)
+            self._reopen_profile_for_reverification(
+                historical_profile_id, reverification_profile, now_iso
+            )
         elif decision == "REVOKE":
             credential["status"] = "REVOKED"
             self.credentials[credential_id] = json.dumps(credential)
