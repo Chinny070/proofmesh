@@ -280,7 +280,15 @@ class TestChallengeGeneration:
 # -- Proof submission --
 
 
-VALID_CONTENT_HASH = hashlib.sha256(b"evidence-1").hexdigest()
+def _challenge_hash(contract, claim_id="claim-1"):
+    claim = json.loads(contract.get_identity_claim(claim_id))
+    profile = json.loads(contract.get_identity_profile(claim["profile_id"]))
+    challenge_text = (
+        f"PROOFMESH|PROFILE:{claim['profile_id']}|CLAIM:{claim_id}"
+        f"|WALLET:{profile['owner']}|NONCE:{claim['challenge_nonce']}"
+        f"|EXP:{claim['challenge_expires_at']}"
+    )
+    return hashlib.sha256(challenge_text.encode()).hexdigest()
 
 
 class TestProofSubmission:
@@ -307,7 +315,7 @@ class TestProofSubmission:
             "proof-1",
             "https://github.com/alexdev",
             "PAGE_TEXT",
-            VALID_CONTENT_HASH,
+            _challenge_hash(contract),
             "2030-01-01T01:00:00",
         )
         assert result == "proof-1"
@@ -317,7 +325,7 @@ class TestProofSubmission:
         assert proof["submitter"].lower() == as_hex(direct_alice).lower()
         assert proof["source_url"] == "https://github.com/alexdev"
         assert proof["proof_type"] == "PAGE_TEXT"
-        assert proof["content_hash"] == VALID_CONTENT_HASH
+        assert proof["content_hash"] == _challenge_hash(contract)
         assert proof["observed_at"] == "2030-01-01T01:00:00"
         assert proof["status"] == "SUBMITTED"
         assert proof["challenge_text"].startswith("PROOFMESH|PROFILE:profile-1|CLAIM:claim-1")
@@ -336,12 +344,11 @@ class TestProofSubmission:
         contract = self._challenged_claim(direct_deploy, direct_vm, direct_alice)
         contract.submit_identity_proof(
             "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-            "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+            "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
         )
-        other_hash = hashlib.sha256(b"evidence-2").hexdigest()
         result = contract.submit_identity_proof(
             "profile-1", "claim-1", "proof-2", "https://github.com/alexdev",
-            "SCREENSHOT", other_hash, "2030-01-01T02:00:00",
+            "SCREENSHOT", _challenge_hash(contract), "2030-01-01T02:00:00",
         )
         assert result == "proof-2"
         proof_ids = json.loads(contract.get_claim_proof_ids("claim-1"))
@@ -356,7 +363,7 @@ class TestProofSubmission:
         with direct_vm.expect_revert("Claim not found"):
             contract.submit_identity_proof(
                 "profile-1", "no-such-claim", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
             )
 
     def test_proof_claim_profile_mismatch_rejected(
@@ -375,7 +382,7 @@ class TestProofSubmission:
         with direct_vm.expect_revert("Claim does not belong to this profile"):
             contract.submit_identity_proof(
                 "profile-2", "claim-1", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
             )
 
     def test_proof_by_non_owner_rejected(
@@ -389,7 +396,7 @@ class TestProofSubmission:
         ):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
             )
 
     def test_proof_without_active_challenge_rejected(
@@ -408,7 +415,7 @@ class TestProofSubmission:
         ):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
             )
 
     def test_expired_challenge_rejected(self, direct_deploy, direct_vm, direct_alice):
@@ -418,7 +425,7 @@ class TestProofSubmission:
         with direct_vm.expect_revert("CHALLENGE_EXPIRED"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-02T00:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-02T00:00:00",
             )
 
         claim = json.loads(contract.get_identity_claim("claim-1"))
@@ -430,7 +437,7 @@ class TestProofSubmission:
         with direct_vm.expect_revert("PROOF_PREDATES_CHALLENGE"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2029-12-31T23:59:59",
+                "PAGE_TEXT", _challenge_hash(contract), "2029-12-31T23:59:59",
             )
 
     def test_future_observed_at_rejected(self, direct_deploy, direct_vm, direct_alice):
@@ -439,7 +446,7 @@ class TestProofSubmission:
         with direct_vm.expect_revert("observed_at cannot be in the future"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-05T00:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-05T00:00:00",
             )
 
     def test_malformed_source_url_rejected(self, direct_deploy, direct_vm, direct_alice):
@@ -448,7 +455,40 @@ class TestProofSubmission:
         with direct_vm.expect_revert("SOURCE_INACCESSIBLE"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "not-a-url",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
+            )
+
+    def test_platform_claim_rejects_wrong_domain(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+        contract.create_identity_profile("profile-1")
+        with direct_vm.expect_revert("CLAIM_SOURCE_MISMATCH"):
+            contract.add_identity_claim(
+                "profile-1", "claim-1", "X_PROFILE", "https://example.com/alexdev"
+            )
+
+    def test_proof_must_belong_to_claimed_account(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract = self._challenged_claim(direct_deploy, direct_vm, direct_alice)
+        with direct_vm.expect_revert("PROOF_SOURCE_MISMATCH"):
+            contract.submit_identity_proof(
+                "profile-1", "claim-1", "proof-1",
+                "https://github.com/different-user/status/1",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
+            )
+
+    def test_digest_must_match_exact_issued_challenge(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract = self._challenged_claim(direct_deploy, direct_vm, direct_alice)
+        with direct_vm.expect_revert("CONTENT_HASH_MISMATCH"):
+            contract.submit_identity_proof(
+                "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
+                "PAGE_TEXT", hashlib.sha256(b"not-the-challenge").hexdigest(),
+                "2030-01-01T01:00:00",
             )
 
     def test_invalid_content_hash_rejected(self, direct_deploy, direct_vm, direct_alice):
@@ -466,14 +506,14 @@ class TestProofSubmission:
         with direct_vm.expect_revert("Proof type must be one of"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-                "NOT_A_TYPE", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+                "NOT_A_TYPE", _challenge_hash(contract), "2030-01-01T01:00:00",
             )
 
     def test_duplicate_proof_id_rejected(self, direct_deploy, direct_vm, direct_alice):
         contract = self._challenged_claim(direct_deploy, direct_vm, direct_alice)
         contract.submit_identity_proof(
             "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-            "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+            "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
         )
         with direct_vm.expect_revert("Proof ID already exists"):
             contract.submit_identity_proof(
@@ -487,26 +527,27 @@ class TestProofSubmission:
         contract = self._challenged_claim(direct_deploy, direct_vm, direct_alice)
         contract.submit_identity_proof(
             "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-            "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+            "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
         )
         with direct_vm.expect_revert("CLAIM_DUPLICATED"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-2", "https://github.com/alexdev",
-                "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T02:00:00",
+                "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T02:00:00",
             )
 
     def test_proof_cap_enforced(self, direct_deploy, direct_vm, direct_alice):
         contract = self._challenged_claim(direct_deploy, direct_vm, direct_alice)
         for i in range(5):
             contract.submit_identity_proof(
-                "profile-1", "claim-1", f"proof-{i}", "https://github.com/alexdev",
-                "PAGE_TEXT", hashlib.sha256(f"evidence-{i}".encode()).hexdigest(),
+                "profile-1", "claim-1", f"proof-{i}",
+                f"https://github.com/alexdev/proof-{i}",
+                "PAGE_TEXT", _challenge_hash(contract),
                 "2030-01-01T01:00:00",
             )
         with direct_vm.expect_revert("Proof cap reached"):
             contract.submit_identity_proof(
                 "profile-1", "claim-1", "proof-overflow", "https://github.com/alexdev",
-                "PAGE_TEXT", hashlib.sha256(b"evidence-overflow").hexdigest(),
+                "PAGE_TEXT", _challenge_hash(contract),
                 "2030-01-01T01:00:00",
             )
 
@@ -521,7 +562,7 @@ class TestFreezeIdentityEvaluation:
         )
         contract.submit_identity_proof(
             "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-            "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+            "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
         )
         return contract
 
@@ -646,14 +687,17 @@ def _ready_for_evaluation(
     contract.add_identity_claim(
         "profile-1", "claim-1", "GITHUB_PROFILE", "https://github.com/alexdev"
     )
-    contract.issue_verification_challenge("profile-1", "claim-1")
+    challenge_text = contract.issue_verification_challenge("profile-1", "claim-1")
     direct_vm.warp("2030-01-01T02:00:00Z")
     contract.submit_identity_proof(
         "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-        "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+        "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
     )
     contract.freeze_identity_evaluation("profile-1")
-    direct_vm.mock_web("github.com/alexdev", {"status": 200, "body": page_body})
+    direct_vm.mock_web(
+        "github.com/alexdev",
+        {"status": 200, "body": f"{page_body}\n{challenge_text}"},
+    )
     return contract
 
 
@@ -771,7 +815,7 @@ class TestIdentityEvaluationParsing:
         direct_vm.warp("2030-01-01T02:00:00Z")
         contract.submit_identity_proof(
             "profile-1", "claim-1", "proof-1", "https://github.com/alexdev",
-            "PAGE_TEXT", VALID_CONTENT_HASH, "2030-01-01T01:00:00",
+            "PAGE_TEXT", _challenge_hash(contract), "2030-01-01T01:00:00",
         )
         contract.freeze_identity_evaluation("profile-1")
         # No mock_web registered: gl.get_webpage will raise, and the leader
@@ -805,6 +849,20 @@ class TestIdentityEvaluationParsing:
         result = json.loads(contract.evaluate_identity("profile-1", "policy-1"))
         assert result["eligible"] is False
         assert result["credential_type"] != "VERIFIED_ORG_REPRESENTATIVE"
+
+    def test_positive_verdict_cannot_cite_page_without_exact_challenge(
+        self, direct_deploy, direct_vm, direct_alice
+    ):
+        contract = _ready_for_evaluation(direct_deploy, direct_vm, direct_alice)
+        direct_vm.clear_mocks()
+        direct_vm.mock_web(
+            "github.com/alexdev",
+            {"status": 200, "body": "This profile does not contain the issued challenge."},
+        )
+        direct_vm.mock_llm(r".*", _fenced(POSITIVE_VERDICT))
+
+        with direct_vm.expect_revert("outside the frozen evidence set"):
+            contract.evaluate_identity("profile-1", "policy-1")
 
     def test_evaluation_requires_owner(
         self, direct_deploy, direct_vm, direct_alice, direct_bob
@@ -935,11 +993,15 @@ class TestCredentialIssuance:
         direct_vm.warp("2030-01-01T03:00:00Z")
         contract.submit_identity_proof(
             "profile-2", "claim-2", "proof-2", "https://x.com/alexdev",
-            "PAGE_TEXT", hashlib.sha256(b"evidence-2").hexdigest(), "2030-01-01T02:30:00",
+            "PAGE_TEXT", _challenge_hash(contract, "claim-2"), "2030-01-01T02:30:00",
         )
         contract.freeze_identity_evaluation("profile-2")
         direct_vm.clear_mocks()  # drop the stale profile-1 mocks (first match wins)
-        direct_vm.mock_web("x.com/alexdev", {"status": 200, "body": "Alex on X."})
+        proof_2 = json.loads(contract.get_identity_proof("proof-2"))
+        direct_vm.mock_web(
+            "x.com/alexdev",
+            {"status": 200, "body": f"Alex on X.\n{proof_2['challenge_text']}"},
+        )
         second_verdict = dict(
             POSITIVE_VERDICT, credential_type="VERIFIED_COMMUNITY_MEMBER", evidence_refs=["proof-2"]
         )
@@ -1353,7 +1415,7 @@ def _open_dispute_ready(direct_deploy, direct_vm, direct_alice, direct_bob):
     direct_vm.warp("2030-01-01T03:00:00Z")
     contract.submit_identity_proof(
         "profile-2", "claim-2", "proof-2", "https://github.com/alexdev",
-        "PAGE_TEXT", hashlib.sha256(b"competing-evidence").hexdigest(), "2030-01-01T02:30:00",
+        "PAGE_TEXT", _challenge_hash(contract, "claim-2"), "2030-01-01T02:30:00",
     )
     direct_vm.sender = direct_alice
     return contract, credential_id
@@ -1529,6 +1591,17 @@ class TestConflicts:
 
         credential = json.loads(contract.get_credential(credential_id))
         assert credential["status"] == "RECHECK_DUE"
+        profile = json.loads(contract.get_identity_profile("profile-1"))
+        claim = json.loads(contract.get_identity_claim("claim-1"))
+        historical_proof = json.loads(contract.get_identity_proof("proof-1"))
+        assert profile["status"] == "ACTIVE"
+        assert profile["continuity_status"] == "RECHECK_DUE"
+        assert claim["status"] == "PENDING"
+        assert claim["challenge_nonce"] == ""
+        assert historical_proof["status"] == "HISTORICAL"
+        assert contract.issue_verification_challenge("profile-1", "claim-1").startswith(
+            "PROOFMESH|PROFILE:profile-1|CLAIM:claim-1"
+        )
 
     def test_invalid_controller_profile_id_rejected(
         self, direct_deploy, direct_vm, direct_alice, direct_bob
@@ -1720,7 +1793,7 @@ class TestConflicts:
         direct_vm.warp("2030-01-01T04:00:00Z")
         contract.submit_identity_proof(
             "profile-3", "claim-3", "proof-3", "https://x.com/someoneelse",
-            "PAGE_TEXT", hashlib.sha256(b"unrelated-evidence").hexdigest(), "2030-01-01T03:30:00",
+            "PAGE_TEXT", _challenge_hash(contract, "claim-3"), "2030-01-01T03:30:00",
         )
 
         challenge_id = contract.open_identity_challenge(
@@ -1856,6 +1929,21 @@ class TestTrustPolicies:
 
         all_policies = json.loads(contract.list_trust_policies())
         assert len(all_policies) == 2
+
+    def test_only_creator_can_publish_policy_version(
+        self, direct_deploy, direct_vm, direct_alice, direct_bob
+    ):
+        contract = deploy(direct_deploy)
+        direct_vm.sender = direct_alice
+        policy_id = _create_policy(contract, min_conf=7000)
+        direct_vm.sender = direct_bob
+
+        with direct_vm.expect_revert("Only the policy creator"):
+            _create_policy(contract, min_conf=8000)
+
+        original = json.loads(contract.get_trust_policy(policy_id))
+        assert original["status"] == "ACTIVE"
+        assert original["version"] == 1
 
     def test_active_policy_passes(self, direct_deploy, direct_vm, direct_alice):
         contract, credential_id = _credentialed_profile(direct_deploy, direct_vm, direct_alice)

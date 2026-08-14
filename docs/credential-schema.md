@@ -17,7 +17,7 @@ transition tables.
 | `create_identity_profile(profile_id)` | no | Create a profile owned by the sender |
 | `add_identity_claim(profile_id, claim_id, claim_type, claim_value)` | no | Register a claimed identity source |
 | `issue_verification_challenge(profile_id, claim_id)` | no | Issue a nonce challenge for a claim |
-| `submit_identity_proof(profile_id, claim_id, proof_id, source_url, proof_type, content_hash, observed_at)` | no | Submit evidence against an active challenge |
+| `submit_identity_proof(profile_id, claim_id, proof_id, source_url, proof_type, content_hash, observed_at)` | no | Submit a source-bound proof URL and exact-challenge digest against an active challenge |
 | `freeze_identity_evaluation(profile_id)` | no | Freeze the current claim/proof evidence set |
 | `evaluate_identity(profile_id, policy_id)` | **yes** | Adjudicate the frozen evidence and issue a credential |
 | `request_continuity_check(credential_id, profile_id)`\* | no | Permissionlessly request a continuity recheck |
@@ -273,7 +273,10 @@ a caller gets the complete picture in one call.
 | `profile_id` / `claim_id` / `proof_id` / `challenge_id` | ≤ 100 chars |
 | `claim_value` | ≤ 500 chars |
 | `source_url` | ≤ 500 chars, must be `http`/`https` with a host |
-| `content_hash` | exactly 64 lowercase hex chars (sha256) |
+| `content_hash` | exactly 64 lowercase hex chars and equal to sha256 of the exact issued challenge |
+| platform claim source | `GITHUB_PROFILE` uses `github.com`; `X_PROFILE` uses `x.com` or `twitter.com` |
+| proof source binding | platform proof URL must remain under the claimed account; generic proof URL must remain on the claimed host |
+| live challenge binding | retrieved proof content must contain the exact issued challenge before its proof ID can support an eligible verdict |
 | `statement` (challenge) | ≤ 1000 chars |
 | `summary` (any verdict) | ≤ 500 chars |
 | `reason_codes` (any verdict) | ≤ 12 entries |

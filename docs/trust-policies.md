@@ -61,6 +61,10 @@ new one becomes `ACTIVE`. Only the newest version of a given name is ever
 active; every older version remains fully queryable via `get_trust_policy`
 and `get_trust_policy_versions(name)`.
 
+Only the creator recorded on the first version may publish later versions
+of that named policy. Another wallet cannot deactivate or supersede a
+builder's active policy by reusing its name.
+
 This means an integrating app that pins a specific `policy_id` (rather than
 just a `name`) keeps working even after the policy is superseded — it's
 just checking against a now-`INACTIVE` policy, which `evaluate_policy_view`

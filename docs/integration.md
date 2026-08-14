@@ -275,7 +275,7 @@ Answered against the deployed contract, not against intent.
 
 ### Can arbitrary supported identity claim types be used without changing contract code?
 
-**Yes, within the allowlist.** Eight claim types are supported (`GITHUB_PROFILE`, `X_PROFILE`, `PERSONAL_WEBSITE`, `PROJECT_WEBSITE`, `TEAM_PAGE`, `DEVELOPER_PROFILE`, `COMMUNITY_PROFILE`, `ORG_PAGE`), and any URL may be claimed under any of them without touching the contract. The allowlist is deliberate rather than open-ended: an unbounded type field would let callers smuggle arbitrary strings into the adjudication prompt and would make policy `allowed_claim_types` meaningless. Adding a ninth category is a one-line contract change; using the existing eight for any source is not.
+**Yes, within the allowlist and source rules.** Eight claim types are supported (`GITHUB_PROFILE`, `X_PROFILE`, `PERSONAL_WEBSITE`, `PROJECT_WEBSITE`, `TEAM_PAGE`, `DEVELOPER_PROFILE`, `COMMUNITY_PROFILE`, `ORG_PAGE`). Platform-specific types are domain-bound (`github.com` for GitHub and `x.com`/`twitter.com` for X); generic website/page types accept any structurally valid public HTTP(S) source. The allowlist is deliberate rather than open-ended: arbitrary type strings would weaken policy comparisons and enter adjudication prompts without a defined meaning.
 
 ### Can identity ownership conflicts be resolved generically?
 

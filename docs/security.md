@@ -14,7 +14,7 @@ def leader():
     # 1. fetch live evidence from validated on-chain URLs only
     # 2. build a delimited, labeled evidence packet
     # 3. call gl.nondet.exec_prompt(task) for a strict-JSON verdict
-    # 4. strip markdown fences
+    # 4. strip markdown fences and return the bounded result package
     return result
 
 raw_result = gl.eq_principle.prompt_comparative(leader, principle)
@@ -35,16 +35,20 @@ Every `principle` string names the specific fields that must match exactly
 versus fields allowed numeric tolerance (BPS fields within 1000–1500 of each
 other) versus fields required only to convey the same meaning (`summary`).
 
-## Only validated, on-chain claim sources are ever fetched
+## Only validated, on-chain evidence sources are ever fetched
 
-Every `gl.nondet.web.render(url, mode="text")` call inside a leader function
-uses a `url` read directly from an on-chain `IdentityClaim.claim_value` —
-the same value that was validated (type-allowlisted, length-bounded) when
-the claim was created in `add_identity_claim`. The model is never asked to
-choose, generate, or suggest a URL to fetch; it only ever sees pages that
-were already fetched *before* the prompt was built. This satisfies the
-spec's explicit requirement: "only fetch the validated claim URLs already
-stored on-chain... do not follow arbitrary model-generated links."
+Every `gl.nondet.web.render(url, mode="text")` call uses a URL already stored
+and validated on-chain. Identity evaluation fetches each submitted
+`IdentityProof.source_url`; submission has already bound platform proofs to
+the claimed domain and account (or generic proofs to the claimed host).
+Continuity and challenge adjudication fetch stored claim sources. The model
+is never asked to choose, generate, or suggest a URL.
+
+For identity evaluation, contract code checks the retrieved proof content
+for the exact issued wallet/profile/claim/nonce/expiry challenge before the
+proof ID enters `verified_evidence_refs`. A model verdict cannot cite a proof
+that was inaccessible or lacked that exact challenge. The submitted
+`content_hash` is also required to equal sha256 of that exact challenge.
 
 Fetch failures (`SOURCE_INACCESSIBLE`) are caught with a plain
 `try/except Exception` around each `gl.nondet.web.render` call and
@@ -201,7 +205,7 @@ the model behaving.
 **Two write paths remain unexercised against live validators.** The core
 lifecycle has been run end-to-end from a real browser wallet against the
 deployed contract, every transaction reaching consensus. Continuity checks
-and conflicting-claim adjudication are covered by the 127 direct tests but
+and conflicting-claim adjudication are covered by the 132 direct tests but
 have not run on-chain: continuity is gated behind a 30-day recheck interval,
 and a dispute requires a second wallet with a competing profile. Their
 nondeterministic adjudication therefore has no live-consensus evidence

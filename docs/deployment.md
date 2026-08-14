@@ -131,7 +131,7 @@ text.
 3. `issue_verification_challenge("demo-profile-1", "demo-claim-1")`
    — capture the returned challenge text
    (`PROOFMESH|PROFILE:...|CLAIM:...|WALLET:...|NONCE:...|EXP:...`) and
-   actually publish it at the claimed URL before continuing.
+   actually publish it under the claimed account and retain the exact public proof URL before continuing.
 4. `submit_identity_proof("demo-profile-1", "demo-claim-1", "demo-proof-1", "<same URL>", "PAGE_TEXT", "<sha256 hex of the page content you observed>", "<ISO-8601 timestamp you observed it>")`
 5. `freeze_identity_evaluation("demo-profile-1")`
 6. `evaluate_identity("demo-profile-1", "demo-policy-placeholder")` — this
@@ -230,7 +230,7 @@ success, and neither is a leader receipt without validator agreement.
 | 3 | **Create profile** | `/identity/new` | Transaction reaches `finalized_success`; redirects to the Claim Wizard; profile appears in `/identity` |
 | 4 | **Create claim** | `/identity/:id/claims` | Claim listed with status `PENDING` |
 | 5 | **Issue challenge** | `/identity/:id/claims` | Claim moves to `CHALLENGE_ISSUED`; **the exact challenge text is displayed and copyable** — confirm it matches `PROOFMESH\|PROFILE:…\|CLAIM:…\|WALLET:…\|NONCE:…\|EXP:…` |
-| 6 | **Publish challenge externally** | Off-site | Post the exact text at the claimed URL (gist, bio, page). Confirm it is publicly reachable without login |
+| 6 | **Publish challenge externally** | Off-site | Post the exact text under the claimed account, then submit that exact public proof URL. Confirm it is publicly reachable without login |
 | 7 | **Submit proof** | `/identity/:id/claims` | Compute the SHA-256 via the in-page helper; claim moves to `PROOF_SUBMITTED` |
 | 8 | **Freeze evidence** | `/identity/:id/claims` | Claim → `FROZEN`, profile → `EVALUATION_FROZEN`; further claims/proofs are refused |
 | 9 | **Evaluate identity** | `/identity/:id/claims` | Nondeterministic — expect a longer wait. Verdict panel renders the real returned JSON |

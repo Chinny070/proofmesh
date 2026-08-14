@@ -190,7 +190,12 @@ export default function IdentityClaimsPage() {
       )}
 
       {isOwner && activeClaim && (
-        <ClaimProgressPanel profileId={p.id} claim={activeClaim} disabled={frozen} />
+        <ClaimProgressPanel
+          profileId={p.id}
+          profileOwner={p.owner}
+          claim={activeClaim}
+          disabled={frozen}
+        />
       )}
 
       {isOwner && !frozen && (
@@ -327,10 +332,12 @@ function AddClaimForm({
 
 function ClaimProgressPanel({
   profileId,
+  profileOwner,
   claim,
   disabled,
 }: {
   profileId: string;
+  profileOwner: string;
   claim: IdentityClaim;
   disabled: boolean;
 }) {
@@ -340,6 +347,11 @@ function ClaimProgressPanel({
 
   const expired =
     claim.challenge_expires_at && new Date(claim.challenge_expires_at) < new Date();
+  const issuedChallenge =
+    challengeText ??
+    (claim.challenge_nonce && claim.challenge_expires_at
+      ? `PROOFMESH|PROFILE:${profileId}|CLAIM:${claim.claim_id}|WALLET:${profileOwner}|NONCE:${claim.challenge_nonce}|EXP:${claim.challenge_expires_at}`
+      : null);
 
   async function issueChallenge() {
     setChallengeText(null);
@@ -459,7 +471,11 @@ function ClaimProgressPanel({
           )}
 
           {!disabled && !expired && (
-            <SubmitProofForm profileId={profileId} claim={claim} />
+            <SubmitProofForm
+              profileId={profileId}
+              claim={claim}
+              challengeText={issuedChallenge}
+            />
           )}
         </div>
       )}
@@ -470,7 +486,11 @@ function ClaimProgressPanel({
             <strong>Proof recorded.</strong> You can submit more evidence for this claim, or
             freeze the evidence set below and run the evaluation.
           </p>
-          <SubmitProofForm profileId={profileId} claim={claim} />
+          <SubmitProofForm
+            profileId={profileId}
+            claim={claim}
+            challengeText={issuedChallenge}
+          />
         </div>
       )}
 
@@ -486,12 +506,19 @@ function ClaimProgressPanel({
 
 // -- Submit proof ---------------------------------------------------------
 
-function SubmitProofForm({ profileId, claim }: { profileId: string; claim: IdentityClaim }) {
+function SubmitProofForm({
+  profileId,
+  claim,
+  challengeText,
+}: {
+  profileId: string;
+  claim: IdentityClaim;
+  challengeText: string | null;
+}) {
   const [proofId, setProofId] = useState("");
   const [sourceUrl, setSourceUrl] = useState(claim.claim_value);
   const [proofType, setProofType] = useState<ProofType>("PAGE_TEXT");
   const [contentHash, setContentHash] = useState("");
-  const [pageText, setPageText] = useState("");
   const [touched, setTouched] = useState(false);
   const write = useProofMeshWrite();
 
@@ -508,10 +535,10 @@ function SubmitProofForm({ profileId, claim }: { profileId: string; claim: Ident
           ? "Content hash must be a 64-character lowercase hex SHA-256 digest."
           : null;
 
-  /** Hashes pasted page content in-browser via SubtleCrypto. */
-  async function hashPageText() {
-    if (!pageText) return;
-    const bytes = new TextEncoder().encode(pageText);
+  /** Hashes the exact issued wallet challenge required by the contract. */
+  async function hashChallenge() {
+    if (!challengeText) return;
+    const bytes = new TextEncoder().encode(challengeText);
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     const hex = Array.from(new Uint8Array(digest))
       .map((b) => b.toString(16).padStart(2, "0"))
@@ -539,7 +566,6 @@ function SubmitProofForm({ profileId, claim }: { profileId: string; claim: Ident
     if (result.state === "finalized_success") {
       setProofId("");
       setContentHash("");
-      setPageText("");
       setTouched(false);
     }
   }
@@ -548,8 +574,9 @@ function SubmitProofForm({ profileId, claim }: { profileId: string; claim: Ident
     <div style={{ marginTop: "1.25rem", borderTop: "1px solid var(--hairline)", paddingTop: "1rem" }}>
       <h3>Submit your proof</h3>
       <p className="dim small">
-        Once the challenge is live at your source, record it on-chain. The hash commits to
-        exactly what you observed, so it can't be swapped later.
+        Once the challenge is live at your submitted proof URL, record it on-chain. The
+        digest must commit to the exact issued challenge; validators fetch that URL and
+        require the same challenge in the retrieved content.
       </p>
 
       <WalletGate>
@@ -598,25 +625,20 @@ function SubmitProofForm({ profileId, claim }: { profileId: string; claim: Ident
           <fieldset>
             <legend>Content hash</legend>
             <div className="field">
-              <label htmlFor="pageText">Paste what you published (optional helper)</label>
-              <textarea
-                id="pageText"
-                value={pageText}
-                onChange={(e) => setPageText(e.target.value)}
-                placeholder="Paste the page content containing your challenge text…"
-                aria-describedby="pageText-hint"
-                disabled={write.isPending}
-              />
+              <label>Issued challenge</label>
+              <code className="challenge-text">
+                {challengeText ?? "Issue a challenge before computing its digest."}
+              </code>
               <p className="field-hint" id="pageText-hint">
-                Hashed locally in your browser — the text itself is never sent anywhere.
+                The exact challenge is hashed locally in your browser.
               </p>
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => void hashPageText()}
-                disabled={!pageText || write.isPending}
+                onClick={() => void hashChallenge()}
+                disabled={!challengeText || write.isPending}
               >
-                Compute SHA-256
+                Compute challenge SHA-256
               </button>
             </div>
 

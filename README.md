@@ -53,10 +53,10 @@ Answering those requires live web retrieval and judgement over unstructured text
    ```
    PROOFMESH|PROFILE:alex-dev|CLAIM:github-main|WALLET:0x…|NONCE:7F92A…|EXP:2026-…
    ```
-4. **Publish it yourself.** You post it at the claimed source. **ProofMesh cannot post on your behalf and never asks for platform credentials.** A copied or pre-existing post won't pass — proofs that predate the challenge are rejected.
+4. **Publish it yourself.** You post it under the claimed account and submit the exact public proof URL. **ProofMesh cannot post on your behalf and never asks for platform credentials.** A copied or pre-existing post won't pass — proofs that predate the challenge are rejected.
 5. **Submit the proof.** Record the source URL and a SHA-256 hash of what you observed, so the evidence can't be swapped later.
 6. **Freeze the evidence.** Claims and proofs lock into an immutable set, so validators all judge the same record and you can't add favourable evidence mid-evaluation.
-7. **Evaluate.** GenLayer validators independently fetch each claimed source, check the challenge is there, assess whether the sources genuinely corroborate each other, and reach consensus on a verdict.
+7. **Evaluate.** GenLayer validators independently fetch each submitted proof URL, require the exact wallet-bound challenge in the retrieved content, assess whether the verified sources genuinely corroborate each other, and reach consensus on a verdict. A proof whose page is inaccessible or does not contain that challenge cannot support a credential.
 
 The result is a **purpose-specific credential** — `VERIFIED_DEVELOPER`, `VERIFIED_ORG_REPRESENTATIVE`, and so on, not a single generic "verified" badge — carrying a confidence score in basis points, a count of independent signals, machine-readable reason codes, and citations to the exact evidence used.
 
@@ -106,7 +106,7 @@ else showReasons(result.failure_reasons);
 
 A **trust policy** is a versioned bundle of requirements — minimum confidence, minimum independent signals, whether continuity must be current, whether open disputes disqualify, and which identity sources count. Evaluation is **fully deterministic**: every field compared is already-finalized on-chain state, so no model runs at query time and the same inputs always give the same answer.
 
-Policies are versioned and never deleted. An app pinned to a specific `policy_id` keeps behaving identically after the policy is superseded — evaluation reports `POLICY_INACTIVE` rather than silently switching to different rules.
+Policies are versioned and never deleted. Only the original creator can publish a later version of the same named policy. An app pinned to a specific `policy_id` keeps behaving identically after the policy is superseded — evaluation reports `POLICY_INACTIVE` rather than silently switching to different rules.
 
 See [docs/integration.md](docs/integration.md) and the in-app **Integration Hub** at `/integration` for worked examples: a grants program, a community platform, and a marketplace.
 
