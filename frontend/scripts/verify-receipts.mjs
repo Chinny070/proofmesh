@@ -16,7 +16,7 @@ import { createServer } from "vite";
 import { createClient } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
-const CONTRACT = "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2";
+const CONTRACT = "0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D";
 
 // Load the real module through Vite so we exercise shipped logic rather
 // than a reimplementation of it.

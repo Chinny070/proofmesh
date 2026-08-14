@@ -1,7 +1,7 @@
 # Credential Schema and Contract Method Inventory
 
 This document is the authoritative reference for `contracts/proofmesh.py` as
-deployed at `0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` on GenLayer
+deployed at `0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D` on GenLayer
 StudioNet. It covers every storage record, every
 strict JSON verdict schema, the full method inventory, and the exact status
 transition tables.

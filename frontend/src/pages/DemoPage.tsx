@@ -172,8 +172,9 @@ export default function DemoPage() {
       toLabel: "Submit proof",
       body: (
         <p>
-          Record where the challenge is published and a SHA-256 hash of exactly what you
-          observed. The hash commits you to that content, so evidence can't be swapped later. The
+          Record the exact public proof URL and a SHA-256 hash of the issued challenge.
+          The contract verifies that digest, and validators require the exact challenge in the
+          retrieved proof content. The
           wizard can compute it in your browser — the text never leaves your machine.
         </p>
       ),

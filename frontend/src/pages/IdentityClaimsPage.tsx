@@ -715,7 +715,7 @@ function FreezeAndEvaluatePanel({
       <h2 id="freeze-h">Freeze evidence and evaluate</h2>
       <p className="dim small">
         Freezing locks your claims and proofs into an immutable evidence set. GenLayer validators
-        then retrieve each claimed source live and adjudicate whether you credibly control the
+        then retrieve each submitted proof URL, require its exact challenge, and adjudicate whether you credibly control the
         identity set.
       </p>
 

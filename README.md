@@ -8,7 +8,7 @@ ProofMesh is a reusable digital identity and trust-attestation protocol built on
 |---|---|
 | **Live app** | https://proofmesh.vercel.app |
 | **Source** | https://github.com/Chinny070/proofmesh |
-| **Contract** | `0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` |
+| **Contract** | `0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D` |
 | **Network** | GenLayer StudioNet |
 | **Chain ID** | `61999` |
 | **RPC** | `https://studio.genlayer.com/api` |
@@ -54,7 +54,7 @@ Answering those requires live web retrieval and judgement over unstructured text
    PROOFMESH|PROFILE:alex-dev|CLAIM:github-main|WALLET:0x…|NONCE:7F92A…|EXP:2026-…
    ```
 4. **Publish it yourself.** You post it under the claimed account and submit the exact public proof URL. **ProofMesh cannot post on your behalf and never asks for platform credentials.** A copied or pre-existing post won't pass — proofs that predate the challenge are rejected.
-5. **Submit the proof.** Record the source URL and a SHA-256 hash of what you observed, so the evidence can't be swapped later.
+5. **Submit the proof.** Record the exact public proof URL and the SHA-256 hash of the exact issued challenge.
 6. **Freeze the evidence.** Claims and proofs lock into an immutable set, so validators all judge the same record and you can't add favourable evidence mid-evaluation.
 7. **Evaluate.** GenLayer validators independently fetch each submitted proof URL, require the exact wallet-bound challenge in the retrieved content, assess whether the verified sources genuinely corroborate each other, and reach consensus on a verdict. A proof whose page is inaccessible or does not contain that challenge cannot support a credential.
 
@@ -94,7 +94,7 @@ import { studionet } from "genlayer-js/chains";
 const client = createClient({ chain: studionet });
 
 const raw = await client.readContract({
-  address: "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2",
+  address: "0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D",
   functionName: "evaluate_policy_view",
   args: [profileId, policyId, credentialId],
 });
@@ -117,7 +117,7 @@ See [docs/integration.md](docs/integration.md) and the in-app **Integration Hub*
 ```text
 proofmesh/
 ├─ contracts/proofmesh.py              # the Intelligent Contract (33 methods)
-├─ tests/direct/test_proofmesh.py      # 127 direct tests
+├─ tests/direct/test_proofmesh.py      # 132 direct tests
 ├─ tests/integration/                  # integration test scaffold
 ├─ frontend/                           # React + TypeScript + Vite
 └─ docs/                               # protocol, integration, security, deployment
@@ -129,7 +129,7 @@ proofmesh/
 
 ```bash
 genvm-lint check contracts/proofmesh.py --json   # passes clean
-pytest tests/direct/ -v                          # 127 passed
+pytest tests/direct/ -v                          # 132 passed
 ```
 
 Full method inventory, storage schemas, verdict schemas, and status transitions: [docs/credential-schema.md](docs/credential-schema.md).
@@ -148,7 +148,7 @@ The `.env.example` already points at the live deployed contract, so reads work i
 ```
 VITE_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 VITE_GENLAYER_CHAIN_ID=61999
-VITE_PROOFMESH_CONTRACT_ADDRESS=0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2
+VITE_PROOFMESH_CONTRACT_ADDRESS=0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D
 ```
 
 Other commands:
@@ -191,7 +191,7 @@ These are real constraints, not disclaimers:
 - **Platform access varies.** Rate limits, login walls, geographic differences, and bot protection can all affect what validators can retrieve.
 - **Credentials go stale and can be contested.** A credential is a point-in-time judgement with an expiry. Consumers should check status and expiry, not just existence.
 - **Independence assessment is bounded.** ProofMesh will report that claims show low independence confidence. It will never assert that two wallets are the same person.
-- **Continuity and dispute resolution have not run on-chain.** The core lifecycle — profile, claims, challenges, proofs, freeze, evaluation, credential issuance, and trust-policy evaluation — has been exercised end-to-end against the deployed contract from a real browser wallet, with every transaction reaching validator consensus. Continuity checks and conflicting-claim adjudication are implemented and covered by the 127 direct tests, but neither has been run against live validators: continuity is gated behind a 30-day recheck interval, and a dispute requires a second wallet. See [docs/deployment.md](docs/deployment.md#browser-wallet-verification-checklist).
+- **The corrected deployment is fresh.** Its safe reads are verified, but its injected-wallet write lifecycle has not yet been rerun. The earlier deployment completed the core lifecycle; continuity and conflicting-claim adjudication remain covered by 132 direct tests but have not run against live validators. See [docs/deployment.md](docs/deployment.md#browser-wallet-verification-checklist).
 
 ## Documentation
 

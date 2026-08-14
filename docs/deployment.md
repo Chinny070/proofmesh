@@ -6,7 +6,7 @@ Studio (not via CLI).
 
 | Setting | Value |
 |---|---|
-| Contract address | `0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` |
+| Contract address | `0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D` |
 | Network | GenLayer StudioNet |
 | Chain ID | `61999` |
 | RPC | `https://studio.genlayer.com/api` |
@@ -73,7 +73,7 @@ and [docs/deployed-schema.json](deployed-schema.json).
 ## Post-deployment verification result
 
 Performed against the live deployed contract at
-`0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2` on StudioNet, via
+`0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D` on StudioNet, via
 `genlayer_py`'s `get_contract_schema` and `read_contract` (read-only calls
 only — no write, no redeployment).
 
@@ -102,10 +102,9 @@ only — no write, no redeployment).
    list_trust_policies() -> []
    ```
 
-3. **Write flow**: subsequently completed end-to-end against this
-   contract — see the
-   [browser-wallet verification checklist](#browser-wallet-verification-checklist)
-   below for what was run and what remains unexercised.
+3. **Write flow**: not yet rerun against this corrected deployment. The
+   contract is fresh and the safe read checks above are the only live calls
+   recorded for this address so far.
 
 ## Exact read methods to test on a fresh contract
 
@@ -132,7 +131,7 @@ text.
    — capture the returned challenge text
    (`PROOFMESH|PROFILE:...|CLAIM:...|WALLET:...|NONCE:...|EXP:...`) and
    actually publish it under the claimed account and retain the exact public proof URL before continuing.
-4. `submit_identity_proof("demo-profile-1", "demo-claim-1", "demo-proof-1", "<same URL>", "PAGE_TEXT", "<sha256 hex of the page content you observed>", "<ISO-8601 timestamp you observed it>")`
+4. `submit_identity_proof("demo-profile-1", "demo-claim-1", "demo-proof-1", "<exact public proof URL>", "PAGE_TEXT", "<sha256 hex of the exact issued challenge>", "<ISO-8601 timestamp you observed it>")`
 5. `freeze_identity_evaluation("demo-profile-1")`
 6. `evaluate_identity("demo-profile-1", "demo-policy-placeholder")` — this
    is the first real nondeterministic call; wait for finality across
@@ -167,7 +166,7 @@ Set in the Vercel project for Production, Preview, and Development:
 ```
 VITE_GENLAYER_RPC_URL=https://studio.genlayer.com/api
 VITE_GENLAYER_CHAIN_ID=61999
-VITE_PROOFMESH_CONTRACT_ADDRESS=0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2
+VITE_PROOFMESH_CONTRACT_ADDRESS=0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D
 ```
 
 None of these are secrets — they are a public RPC endpoint, a public chain
@@ -191,21 +190,19 @@ client-side navigation) and returned HTTP 200 with the SPA root element:
 /protocol  /integration  /demo  /account
 ```
 
-In-browser against the production origin: every route rendered its expected
-heading, zero console errors, the page issued a live request to
-`https://studio.genlayer.com/api`, protocol counters loaded from chain
-state, and the only contract address rendered anywhere was
-`0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2`.
+Verified on 14 August 2026 after the corrected-address Vercel deployment:
+all nine routes below rendered their expected page heading on direct
+navigation, the browser console contained no errors, `/protocol` displayed
+only `0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D`, and its live StudioNet
+state showed zero profiles, claims, proofs, credentials, continuity checks,
+and disputes, matching the four direct RPC read checks.
 
 ## Browser-wallet verification checklist
 
-**Status: completed against the deployed contract on 13 August 2026.**
-Steps 1-11 were run manually from a browser with a GenLayer-compatible
-wallet, using real public identity sources (`github.com/Chinny070` and
-`x.com/Nnenne070`). Every transaction reached validator consensus
-(`Accepted`), and the run produced credential `cred-9b1a00510153fc79`:
-`VERIFIED_DEVELOPER`, `ACTIVE`, 9100 bps confidence, 2 independent
-signals, citing `proof-1` and `proof-2`.
+**Status: required for the corrected deployment.** The completed 13 August
+2026 browser run belongs to the superseded contract and is retained as
+historical evidence only. Do not treat it as a write-flow verification of
+the corrected address.
 
 Trust-policy evaluation was also exercised: the credential satisfies a
 policy requiring 8000 bps and 2 signals, and correctly fails a stricter
@@ -251,7 +248,7 @@ The continuity and dispute rows above remain in that category.
 - `genvm-lint check contracts/proofmesh.py --json`: clean (see
   [docs/credential-schema.md](credential-schema.md) for the method count it
   reports)
-- `pytest tests/direct/ -v`: 127 passed, 0 failed, 0 skipped
+- `pytest tests/direct/ -v`: 132 passed, 0 failed, 0 skipped
 - `gltest tests/integration/ -v -s`: **blocked at the time of the Stage 8
   audit**. The one integration test present
   (`test_placeholder_deploys_to_studionet`) is a Stage 1-era placeholder

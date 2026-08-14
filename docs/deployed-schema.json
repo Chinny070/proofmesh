@@ -1,9 +1,9 @@
 {
-  "contract_address": "0x7e8EC29C1b6607bb6B078b6C684Cf29f4774Ccf2",
+  "contract_address": "0x92D7FA9942b3e4F832DEDA07a0F517a330499c4D",
   "network": "GenLayer StudioNet",
   "chain_id": 61999,
   "rpc": "https://studio.genlayer.com/api",
-  "retrieved_via": "genlayer-js getContractSchema",
+  "retrieved_via": "verified 33-method build schema plus live StudioNet read checks",
   "schema": {
     "ctor": {
       "params": [],
